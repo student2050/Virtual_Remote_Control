@@ -1,0 +1,66 @@
+workflows:
+  android-build:
+    name: Android Build
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      node: 18
+      java: 17
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: v2.0-native-app
+          include: true
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Build web assets
+        script: echo "Static assets, no build step needed"
+      - name: Sync Capacitor
+        script: npx -y @capacitor/cli sync android
+      - name: Build Android
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+
+  ios-build:
+    name: iOS Build
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      node: 18
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: v2.0-native-app
+          include: true
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor
+        script: npx -y @capacitor/cli sync ios
+      - name: Install CocoaPods
+        script: |
+          cd ios/App
+          pod install || true
+      - name: Build iOS
+        script: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+    artifacts:
+      - ios/App/build/**/*.xcarchive
