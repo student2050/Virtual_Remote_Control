@@ -1,0 +1,21 @@
+{
+  "appId": "com.virtualremote.tvcontrol",
+  "appName": "TV Remote",
+  "webDir": "public",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": [
+      "*"
+    ]
+  },
+  "ios": {
+    "allowsLinkPreview": false,
+    "contentInset": "automatic",
+    "scheme": "capacitor"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "useLegacyBridge": false
+  },
+  "plugins": {}
+}

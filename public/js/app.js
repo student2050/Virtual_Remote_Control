@@ -1,14 +1,56 @@
 /* ═══════════════════════════════════════════════════════════════════
-   Samsung TV Virtual Remote Control - Frontend Application
+   Samsung TV Virtual Remote Control v2.0 - Direct Connection
+   Connects directly from browser/app to Samsung TV via WebSocket
+   No backend server needed for TV control
    ═══════════════════════════════════════════════════════════════════ */
+
+// Samsung TV Key Map
+const TV_KEY_MAP = {
+    power: 'KEY_POWER',
+    powerOff: 'KEY_POWEROFF',
+    volumeUp: 'KEY_VOLUP',
+    volumeDown: 'KEY_VOLDOWN',
+    mute: 'KEY_MUTE',
+    channelUp: 'KEY_CHUP',
+    channelDown: 'KEY_CHDOWN',
+    up: 'KEY_UP',
+    down: 'KEY_DOWN',
+    left: 'KEY_LEFT',
+    right: 'KEY_RIGHT',
+    enter: 'KEY_ENTER',
+    back: 'KEY_RETURN',
+    home: 'KEY_HOME',
+    source: 'KEY_SOURCE',
+    menu: 'KEY_MENU',
+    guide: 'KEY_GUIDE',
+    tools: 'KEY_TOOLS',
+    info: 'KEY_INFO',
+    exit: 'KEY_EXIT',
+    num0: 'KEY_0', num1: 'KEY_1', num2: 'KEY_2', num3: 'KEY_3',
+    num4: 'KEY_4', num5: 'KEY_5', num6: 'KEY_6', num7: 'KEY_7',
+    num8: 'KEY_8', num9: 'KEY_9',
+    play: 'KEY_PLAY', pause: 'KEY_PAUSE', stop: 'KEY_STOP',
+    rewind: 'KEY_REWIND', fastForward: 'KEY_FF',
+    red: 'KEY_RED', green: 'KEY_GREEN', yellow: 'KEY_YELLOW', blue: 'KEY_BLUE',
+    hdmi: 'KEY_HDMI', sleep: 'KEY_SLEEP',
+    pictureSize: 'KEY_PICTURE_SIZE',
+    channelList: 'KEY_CH_LIST',
+    panelPower: 'KEY_PANEL_POWER',
+};
+
+// APP_NAME used to identify with the TV (SmartThings is auto-trusted)
+const APP_NAME = 'SmartThings';
+const APP_NAME_BASE64 = btoa(APP_NAME);
 
 class SamsungRemote {
     constructor() {
         this.tvIp = localStorage.getItem('tvIp') || '';
         this.tvPort = parseInt(localStorage.getItem('tvPort')) || 8002;
         this.tvMac = localStorage.getItem('tvMac') || '';
+        this.tvToken = localStorage.getItem('tvToken') || '';
         this.connected = false;
-        this.ws = null;
+        this.tvWs = null;          // Direct WebSocket to TV
+        this._reconnecting = false;
 
         this.init();
     }
@@ -58,79 +100,66 @@ class SamsungRemote {
         this.disconnectBtn = document.getElementById('disconnectBtn');
         this.settingsBtn = document.getElementById('settingsBtn');
 
-        // Toast
-        this.toast = document.getElementById('toast');
+        // Remote buttons
+        this.remoteButtons = document.querySelectorAll('[data-key]');
+        this.appButtons = document.querySelectorAll('[data-app]');
+
+        // Tabs
+        this.tabButtons = document.querySelectorAll('.tab-btn');
+        this.tabContents = document.querySelectorAll('.tab-content');
     }
 
     // ─── Event Binding ──────────────────────────────────────────────
     bindEvents() {
         // Connect button
-        this.connectBtn.addEventListener('click', () => this.handleConnect());
+        this.connectBtn?.addEventListener('click', () => this.handleConnect());
 
-        // Enter key on IP input
-        this.tvIpInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleConnect();
+        // Enter key on inputs
+        [this.tvIpInput, this.tvPortInput, this.tvMacInput].forEach(input => {
+            input?.addEventListener('keypress', e => {
+                if (e.key === 'Enter') this.handleConnect();
+            });
         });
 
-        // Network scanner buttons
-        this.scanBtn.addEventListener('click', () => this.handleScan());
-        this.scanResultsClose.addEventListener('click', () => {
-            this.scanResults.style.display = 'none';
-        });
-
-        // Disconnect button
-        this.disconnectBtn.addEventListener('click', () => this.handleDisconnect());
-
-        // Settings button (re-open modal)
-        this.settingsBtn.addEventListener('click', () => this.showConnectionModal());
-
-        // Tab navigation
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
-        });
-
-        // Remote control buttons
-        document.querySelectorAll('[data-key]').forEach(btn => {
-            btn.addEventListener('click', (e) => this.handleKeyPress(btn.dataset.key, e));
-
-            // Touch feedback
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                btn.classList.add('btn-pressed');
-                this.createRipple(e, btn);
-            }, { passive: false });
-
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                btn.classList.remove('btn-pressed');
+        // Remote key buttons
+        this.remoteButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
                 this.handleKeyPress(btn.dataset.key, e);
+                this.createRipple(e, btn);
             });
         });
 
         // App buttons
-        document.querySelectorAll('[data-app]').forEach(btn => {
-            btn.addEventListener('click', () => this.handleAppLaunch(btn.dataset.app));
-        });
-
-        // Add click ripple for desktop
-        document.querySelectorAll('.remote-btn, .dpad-center').forEach(btn => {
-            btn.addEventListener('mousedown', (e) => {
+        this.appButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.handleAppLaunch(btn.dataset.app);
                 this.createRipple(e, btn);
             });
         });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => this.handleKeyboardShortcut(e));
+        // Disconnect
+        this.disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
+        this.settingsBtn?.addEventListener('click', () => {
+            this.connected = false;
+            this.showConnectionModal();
+        });
 
-        // Visibility change (reconnect if needed)
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && this.tvIp && !this.connected) {
-                this.checkConnection();
-            }
+        // Tab switching
+        this.tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', e => this.handleKeyboardShortcut(e));
+
+        // Scanner
+        this.scanBtn?.addEventListener('click', () => this.handleScan());
+        this.scanResultsClose?.addEventListener('click', () => {
+            this.scanResults.style.display = 'none';
         });
     }
 
-    // ─── Connection Handling ────────────────────────────────────────
+    // ─── Direct WebSocket Connection to TV ──────────────────────────
     async handleConnect() {
         const ip = this.tvIpInput.value.trim();
         const port = parseInt(this.tvPortInput.value) || 8002;
@@ -157,67 +186,157 @@ class SamsungRemote {
         }
 
         this.setConnecting(true);
-        this.showToast('📺 Conectando... Mira la pantalla de tu TV y acepta la conexión', 'info');
+        this.showToast('📺 Conectando al TV...', 'info');
 
         try {
-            const controller = new AbortController();
-            const fetchTimeout = setTimeout(() => controller.abort(), 35000); // Slightly longer than server timeout
+            await this.connectWebSocket(ip, port);
 
-            const response = await fetch('/api/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tvIp: ip, tvPort: port }),
-                signal: controller.signal,
-            });
+            this.tvIp = ip;
+            this.tvPort = port;
+            this.tvMac = mac;
+            this.connected = true;
 
-            clearTimeout(fetchTimeout);
-            const data = await response.json();
+            // Save settings
+            localStorage.setItem('tvIp', ip);
+            localStorage.setItem('tvPort', port.toString());
+            localStorage.setItem('tvMac', mac);
 
-            if (response.ok && data.success) {
-                this.tvIp = ip;
-                this.tvPort = port;
-                this.tvMac = mac;
-                this.connected = true;
+            // Show remote
+            this.showRemote();
+            this.showToast('✅ Conectado al TV Samsung', 'success');
 
-                // Save settings
-                localStorage.setItem('tvIp', ip);
-                localStorage.setItem('tvPort', port.toString());
-                localStorage.setItem('tvMac', mac);
-
-                // Save token if provided
-                if (data.token) {
-                    localStorage.setItem('tvToken', data.token);
-                }
-
-                // Show remote
-                this.showRemote();
-                this.showToast('✅ Conectado al TV Samsung', 'success');
-
-                // Start connection monitoring
-                this.startConnectionMonitor();
-            } else {
-                this.showError(data.error || 'No se pudo conectar al TV');
-            }
+            // Start connection monitoring
+            this.startConnectionMonitor();
         } catch (error) {
-            if (error.name === 'AbortError') {
-                this.showError('Tiempo de espera agotado. ¿Aceptaste la conexión en la pantalla del TV?');
-            } else {
-                this.showError('Error de conexión. Verifica que el servidor esté corriendo.');
-            }
+            console.error('Connection error:', error);
+            this.showError(error.message || 'No se pudo conectar al TV');
         }
 
         this.setConnecting(false);
     }
 
-    async handleDisconnect() {
-        try {
-            await fetch('/api/disconnect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tvIp: this.tvIp }),
-            });
-        } catch (e) {
-            // Ignore errors
+    // ─── WebSocket Connection (Direct to TV) ────────────────────────
+    connectWebSocket(ip, port) {
+        return new Promise((resolve, reject) => {
+            // Close existing connection
+            if (this.tvWs) {
+                try { this.tvWs.close(); } catch (e) { }
+                this.tvWs = null;
+            }
+
+            const protocol = port === 8002 ? 'wss' : 'ws';
+
+            // Build URL with saved token if available
+            let url = `${protocol}://${ip}:${port}/api/v2/channels/samsung.remote.control?name=${APP_NAME_BASE64}`;
+            if (this.tvToken) {
+                url += `&token=${this.tvToken}`;
+            }
+
+            console.log(`🔌 Connecting to TV at ${ip}:${port}...`);
+
+            const ws = new WebSocket(url);
+            let resolved = false;
+
+            const timeout = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    ws.close();
+
+                    // If we used a token and it failed, retry without token
+                    if (this.tvToken) {
+                        console.log('⚠️ Token connection timed out, retrying without token...');
+                        this.tvToken = '';
+                        localStorage.removeItem('tvToken');
+                        this.connectWebSocket(ip, port).then(resolve).catch(reject);
+                    } else {
+                        reject(new Error('Tiempo de espera agotado. Verifica que el TV esté encendido y en la misma red WiFi.'));
+                    }
+                }
+            }, 15000);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket opened to TV');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const response = JSON.parse(event.data);
+                    console.log('📺 TV Event:', response.event);
+
+                    if (response.event === 'ms.channel.connect') {
+                        clearTimeout(timeout);
+                        if (!resolved) {
+                            resolved = true;
+                            this.tvWs = ws;
+
+                            // Save token for future reconnections
+                            if (response.data?.token) {
+                                this.tvToken = response.data.token;
+                                localStorage.setItem('tvToken', response.data.token);
+                                console.log('🔑 Token saved');
+                            }
+
+                            // Try to get TV name
+                            if (response.data?.clients) {
+                                console.log('📺 Connected clients:', response.data.clients.length);
+                            }
+
+                            resolve();
+                        }
+                    } else if (response.event === 'ms.channel.unauthorized') {
+                        clearTimeout(timeout);
+                        if (!resolved) {
+                            resolved = true;
+                            ws.close();
+                            // Clear invalid token and retry
+                            this.tvToken = '';
+                            localStorage.removeItem('tvToken');
+                            this.connectWebSocket(ip, port).then(resolve).catch(reject);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error parsing TV response:', e);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket Error:', error);
+                clearTimeout(timeout);
+                if (!resolved) {
+                    resolved = true;
+
+                    // If WSS failed, suggest trying WS on 8001
+                    if (port === 8002) {
+                        reject(new Error('Error de conexión SSL. Intenta cambiar el puerto a 8001.'));
+                    } else {
+                        reject(new Error('No se puede conectar al TV. Verifica la IP y que estés en la misma red WiFi.'));
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('📺 WebSocket closed');
+                if (this.tvWs === ws) {
+                    this.tvWs = null;
+                    if (this.connected) {
+                        this.connected = false;
+                        this.updateConnectionStatus();
+                        this.showToast('📺 Conexión perdida con el TV', 'error');
+                        // Auto-reconnect
+                        if (!this._reconnecting) {
+                            setTimeout(() => this.tryReconnect(), 3000);
+                        }
+                    }
+                }
+            };
+        });
+    }
+
+    // ─── Disconnect ─────────────────────────────────────────────────
+    handleDisconnect() {
+        if (this.tvWs) {
+            try { this.tvWs.close(); } catch (e) { }
+            this.tvWs = null;
         }
 
         this.connected = false;
@@ -226,9 +345,9 @@ class SamsungRemote {
         this.showToast('🔌 Desconectado del TV', 'info');
     }
 
-    // ─── Key Press Handling ─────────────────────────────────────────
-    async handleKeyPress(key, event) {
-        if (!this.connected) {
+    // ─── Key Press Handling (Direct WebSocket) ──────────────────────
+    handleKeyPress(key, event) {
+        if (!this.connected || !this.tvWs) {
             this.showToast('⚠️ No estás conectado al TV', 'error');
             return;
         }
@@ -238,33 +357,37 @@ class SamsungRemote {
             navigator.vibrate(30);
         }
 
+        const tvKey = TV_KEY_MAP[key];
+        if (!tvKey) {
+            console.error('Unknown key:', key);
+            return;
+        }
+
         try {
-            const response = await fetch('/api/key', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tvIp: this.tvIp, key }),
+            const command = JSON.stringify({
+                method: 'ms.remote.control',
+                params: {
+                    Cmd: 'Click',
+                    DataOfCmd: tvKey,
+                    Option: 'false',
+                    TypeOfRemote: 'SendRemoteKey',
+                },
             });
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                if (data.error?.includes('Not connected')) {
-                    this.connected = false;
-                    this.updateConnectionStatus();
-                    this.showToast('📺 Conexión perdida. Reconectando...', 'error');
-                    this.tryReconnect();
-                } else {
-                    this.showToast(`❌ ${data.error}`, 'error');
-                }
-            }
+            this.tvWs.send(command);
+            console.log(`🎮 Sent key: ${tvKey}`);
         } catch (error) {
             console.error('Key press error:', error);
+            this.connected = false;
+            this.updateConnectionStatus();
+            this.showToast('📺 Conexión perdida. Reconectando...', 'error');
+            this.tryReconnect();
         }
     }
 
-    // ─── App Launch ─────────────────────────────────────────────────
-    async handleAppLaunch(appId) {
-        if (!this.connected) {
+    // ─── App Launch (Direct WebSocket) ──────────────────────────────
+    handleAppLaunch(appId) {
+        if (!this.connected || !this.tvWs) {
             this.showToast('⚠️ No estás conectado al TV', 'error');
             return;
         }
@@ -274,19 +397,20 @@ class SamsungRemote {
         }
 
         try {
-            const response = await fetch('/api/app', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tvIp: this.tvIp, appId }),
+            const command = JSON.stringify({
+                method: 'ms.channel.emit',
+                params: {
+                    event: 'ed.apps.launch',
+                    to: 'host',
+                    data: {
+                        appId: appId,
+                        action_type: 'DEEP_LINK',
+                    },
+                },
             });
 
-            const data = await response.json();
-
-            if (response.ok) {
-                this.showToast('📱 Abriendo aplicación...', 'success');
-            } else {
-                this.showToast(`❌ ${data.error}`, 'error');
-            }
+            this.tvWs.send(command);
+            this.showToast('📱 Abriendo aplicación...', 'success');
         } catch (error) {
             console.error('App launch error:', error);
         }
@@ -294,10 +418,10 @@ class SamsungRemote {
 
     // ─── Keyboard Shortcuts ─────────────────────────────────────────
     handleKeyboardShortcut(e) {
-        if (this.connectionModal.classList.contains('active')) return;
+        if (!this.connected) return;
         if (e.target.tagName === 'INPUT') return;
 
-        const keyMap = {
+        const shortcuts = {
             'ArrowUp': 'up',
             'ArrowDown': 'down',
             'ArrowLeft': 'left',
@@ -305,107 +429,116 @@ class SamsungRemote {
             'Enter': 'enter',
             'Escape': 'back',
             'Backspace': 'back',
-            'Home': 'home',
-            'm': 'mute',
-            'M': 'mute',
+            ' ': 'play',
             '+': 'volumeUp',
             '=': 'volumeUp',
             '-': 'volumeDown',
+            'm': 'mute',
+            'M': 'mute',
+            'h': 'home',
+            'H': 'home',
+            'p': 'power',
+            'P': 'power',
+            'i': 'info',
+            'I': 'info',
+            's': 'source',
+            'S': 'source',
+            'g': 'guide',
+            'G': 'guide',
             'PageUp': 'channelUp',
             'PageDown': 'channelDown',
-            '0': 'num0',
-            '1': 'num1',
-            '2': 'num2',
-            '3': 'num3',
-            '4': 'num4',
-            '5': 'num5',
-            '6': 'num6',
-            '7': 'num7',
-            '8': 'num8',
-            '9': 'num9',
         };
 
-        if (keyMap[e.key]) {
-            e.preventDefault();
-            this.handleKeyPress(keyMap[e.key], e);
+        // Number keys
+        for (let i = 0; i <= 9; i++) {
+            shortcuts[i.toString()] = `num${i}`;
+        }
 
-            // Visual feedback
-            const btn = document.querySelector(`[data-key="${keyMap[e.key]}"]`);
-            if (btn) {
-                btn.classList.add('btn-pressed');
-                setTimeout(() => btn.classList.remove('btn-pressed'), 150);
-            }
+        if (shortcuts[e.key]) {
+            e.preventDefault();
+            this.handleKeyPress(shortcuts[e.key], e);
         }
     }
 
     // ─── Tab Switching ──────────────────────────────────────────────
     switchTab(tabId) {
-        // Update buttons
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        this.tabButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tabId);
         });
-
-        // Update panels
-        document.querySelectorAll('.tab-panel').forEach(panel => {
-            panel.classList.toggle('active', panel.id === `tab-${tabId}`);
+        this.tabContents.forEach(content => {
+            content.classList.toggle('active', content.id === `${tabId}Tab`);
         });
-
-        // Haptic feedback
-        if ('vibrate' in navigator) {
-            navigator.vibrate(15);
-        }
     }
 
     // ─── UI Helpers ─────────────────────────────────────────────────
     showRemote() {
         this.connectionModal.classList.remove('active');
-        this.remoteApp.style.display = 'flex';
+        this.remoteApp.classList.add('active');
+        if (this.tvNameDisplay) this.tvNameDisplay.textContent = 'Samsung TV';
+        if (this.tvIpDisplay) this.tvIpDisplay.textContent = this.tvIp;
         this.updateConnectionStatus();
 
-        // Update display
-        this.tvIpDisplay.textContent = this.tvIp;
+        // Try to fetch TV info via HTTP API for the name
+        this.fetchTVInfo();
     }
 
-    showConnectionModal() {
-        this.remoteApp.style.display = 'none';
-        this.connectionModal.classList.add('active');
-        this.connectionError.style.display = 'none';
-    }
-
-    updateConnectionStatus() {
-        this.statusIndicator.classList.toggle('connected', this.connected);
-        this.tvNameDisplay.textContent = this.connected ? 'Samsung TV' : 'Desconectado';
-    }
-
-    setConnecting(isConnecting) {
-        const btnText = this.connectBtn.querySelector('.btn-text');
-        const btnLoading = this.connectBtn.querySelector('.btn-loading');
-
-        if (isConnecting) {
-            btnText.style.display = 'none';
-            btnLoading.style.display = 'inline';
-            this.connectBtn.disabled = true;
-            this.connectionError.style.display = 'none';
-        } else {
-            btnText.style.display = 'inline';
-            btnLoading.style.display = 'none';
-            this.connectBtn.disabled = false;
+    async fetchTVInfo() {
+        try {
+            const response = await fetch(`http://${this.tvIp}:8001/api/v2/`, {
+                signal: AbortSignal.timeout(3000)
+            });
+            const data = await response.json();
+            if (data?.device?.name && this.tvNameDisplay) {
+                this.tvNameDisplay.textContent = data.device.name;
+            }
+        } catch (e) {
+            // Not critical - TV info is optional
         }
     }
 
+    showConnectionModal() {
+        this.remoteApp.classList.remove('active');
+        this.connectionModal.classList.add('active');
+    }
+
+    updateConnectionStatus() {
+        if (this.statusIndicator) {
+            this.statusIndicator.className = `status-indicator ${this.connected ? 'connected' : 'disconnected'}`;
+        }
+    }
+
+    setConnecting(isConnecting) {
+        if (this.connectBtn) {
+            this.connectBtn.disabled = isConnecting;
+            const spinner = this.connectBtn.querySelector('.btn-spinner');
+            const text = this.connectBtn.querySelector('.btn-text');
+            if (spinner && text) {
+                spinner.style.display = isConnecting ? 'block' : 'none';
+                text.textContent = isConnecting ? 'Conectando...' : 'Conectar al TV';
+            }
+        }
+
+        if (this.tvIpInput) this.tvIpInput.disabled = isConnecting;
+        if (this.tvPortInput) this.tvPortInput.disabled = isConnecting;
+        if (this.tvMacInput) this.tvMacInput.disabled = isConnecting;
+    }
+
     showError(message) {
-        this.connectionError.textContent = message;
-        this.connectionError.style.display = 'block';
+        if (this.connectionError) {
+            this.connectionError.textContent = message;
+            this.connectionError.style.display = 'block';
+        }
     }
 
     showToast(message, type = 'info') {
-        this.toast.textContent = message;
-        this.toast.className = `toast ${type} show`;
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
 
-        clearTimeout(this._toastTimeout);
-        this._toastTimeout = setTimeout(() => {
-            this.toast.classList.remove('show');
-        }, 2500);
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
     }
 
     createRipple(event, element) {
@@ -414,23 +547,15 @@ class SamsungRemote {
 
         const rect = element.getBoundingClientRect();
         const size = Math.max(rect.width, rect.height);
-
-        let x, y;
-        if (event.touches && event.touches.length) {
-            x = event.touches[0].clientX - rect.left - size / 2;
-            y = event.touches[0].clientY - rect.top - size / 2;
-        } else {
-            x = (event.clientX || rect.left + rect.width / 2) - rect.left - size / 2;
-            y = (event.clientY || rect.top + rect.height / 2) - rect.top - size / 2;
-        }
+        const x = event.clientX - rect.left - size / 2;
+        const y = event.clientY - rect.top - size / 2;
 
         ripple.style.width = ripple.style.height = `${size}px`;
         ripple.style.left = `${x}px`;
         ripple.style.top = `${y}px`;
 
         element.appendChild(ripple);
-
-        setTimeout(() => ripple.remove(), 500);
+        setTimeout(() => ripple.remove(), 600);
     }
 
     // ─── Connection Monitoring ──────────────────────────────────────
@@ -446,41 +571,40 @@ class SamsungRemote {
         }
     }
 
-    async checkConnection() {
-        try {
-            const response = await fetch(`/api/status?tvIp=${encodeURIComponent(this.tvIp)}`);
-            const data = await response.json();
-
-            const wasConnected = this.connected;
-            this.connected = data.connected;
-            this.updateConnectionStatus();
-
-            if (wasConnected && !this.connected) {
-                this.showToast('📺 Conexión perdida con el TV', 'error');
+    checkConnection() {
+        // Check if WebSocket is still open
+        if (this.tvWs && this.tvWs.readyState === WebSocket.OPEN) {
+            if (!this.connected) {
+                this.connected = true;
+                this.updateConnectionStatus();
             }
-        } catch (e) {
-            // Server might be down
+        } else if (this.connected) {
+            this.connected = false;
+            this.updateConnectionStatus();
+            this.showToast('📺 Conexión perdida con el TV', 'error');
+            this.tryReconnect();
         }
     }
 
     async tryReconnect() {
+        if (this._reconnecting) return;
+        this._reconnecting = true;
+
         try {
-            const response = await fetch('/api/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tvIp: this.tvIp, tvPort: this.tvPort }),
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                this.connected = true;
-                this.updateConnectionStatus();
-                this.showToast('✅ Reconectado al TV', 'success');
-            }
+            await this.connectWebSocket(this.tvIp, this.tvPort);
+            this.connected = true;
+            this.updateConnectionStatus();
+            this.showToast('✅ Reconectado al TV', 'success');
         } catch (e) {
-            // Will retry on next monitor tick
+            console.log('Reconnect failed, will retry...');
+            setTimeout(() => {
+                this._reconnecting = false;
+                if (!this.connected) this.tryReconnect();
+            }, 5000);
+            return;
         }
+
+        this._reconnecting = false;
     }
 
     // ─── Load Saved Settings ───────────────────────────────────────
@@ -493,7 +617,9 @@ class SamsungRemote {
         }
     }
 
-    // ─── Network Scanner ────────────────────────────────────────────
+    // ─── Network Scanner (TV Info Check) ────────────────────────────
+    // In v2.0, we can't scan the network from the browser.
+    // Instead, we guide the user to find their TV IP
     async handleScan() {
         if (this._scanning) return;
         this._scanning = true;
@@ -508,55 +634,49 @@ class SamsungRemote {
         this.scanResults.style.display = 'none';
         this.connectionError.style.display = 'none';
 
-        // Animated progress bar
-        let progress = 0;
-        const progressSteps = [
-            { target: 15, text: '🏓 Enviando pings a la red...' },
-            { target: 40, text: '📋 Leyendo tabla ARP...' },
-            { target: 60, text: '🔎 Buscando Samsung TVs...' },
-            { target: 80, text: '📡 Verificando puertos...' },
-        ];
+        this.scanProgressFill.style.width = '30%';
+        this.scanProgressText.textContent = '📡 Buscando TV en la red...';
 
-        let stepIndex = 0;
-        const progressInterval = setInterval(() => {
-            if (stepIndex < progressSteps.length) {
-                const step = progressSteps[stepIndex];
-                if (progress < step.target) {
-                    progress += 1;
-                    this.scanProgressFill.style.width = `${progress}%`;
-                } else {
-                    stepIndex++;
-                }
-                if (stepIndex < progressSteps.length) {
-                    this.scanProgressText.textContent = progressSteps[stepIndex]?.text || 'Escaneando...';
-                }
-            }
-        }, 200);
+        // Try common IPs by fetching Samsung TV API
+        const subnet = await this.detectSubnet();
+        const tvs = [];
 
-        try {
-            const response = await fetch('/api/scan');
-            const data = await response.json();
+        this.scanProgressText.textContent = `🔎 Escaneando ${subnet}x...`;
+        this.scanProgressFill.style.width = '50%';
 
-            clearInterval(progressInterval);
+        // Scan common TV IPs (1-30 range is most common for home routers)
+        const checkPromises = [];
+        for (let i = 1; i <= 254; i++) {
+            const ip = `${subnet}${i}`;
+            checkPromises.push(this.checkForSamsungTV(ip));
+        }
 
-            if (response.ok && data.success) {
-                // Complete the progress bar
-                this.scanProgressFill.style.width = '100%';
-                this.scanProgressText.textContent = `✅ ${data.totalDevices} dispositivos encontrados`;
+        // Process in batches of 30
+        for (let i = 0; i < checkPromises.length; i += 30) {
+            const batch = checkPromises.slice(i, i + 30);
+            const results = await Promise.all(batch);
+            results.forEach(r => { if (r) tvs.push(r); });
+            const progress = 50 + (i / checkPromises.length) * 45;
+            this.scanProgressFill.style.width = `${progress}%`;
+            this.scanProgressText.textContent = `🔎 Escaneando... ${Math.round(progress)}%`;
+        }
 
-                // Show results after a brief delay
-                setTimeout(() => {
-                    this.renderScanResults(data);
-                    this.scanProgress.style.display = 'none';
-                }, 500);
-            } else {
-                this.scanProgressFill.style.width = '100%';
-                this.scanProgressText.textContent = `❌ ${data.error || 'Error al escanear'}`;
-            }
-        } catch (error) {
-            clearInterval(progressInterval);
-            this.scanProgressFill.style.width = '100%';
-            this.scanProgressText.textContent = '❌ Error al escanear la red';
+        this.scanProgressFill.style.width = '100%';
+
+        if (tvs.length > 0) {
+            this.scanProgressText.textContent = `✅ ${tvs.length} Samsung TV${tvs.length > 1 ? 's' : ''} encontrado${tvs.length > 1 ? 's' : ''}`;
+            setTimeout(() => {
+                this.renderScanResults({
+                    devices: tvs,
+                    samsungTVs: tvs.length,
+                    network: { subnet }
+                });
+                this.scanProgress.style.display = 'none';
+            }, 500);
+        } else {
+            this.scanProgressText.textContent = '❌ No se encontró ningún Samsung TV';
+            // Show help message
+            this.showError('No se encontró un TV. Ve a Ajustes > Red > Estado de red en tu TV para ver su IP.');
         }
 
         // Reset button state
@@ -566,12 +686,72 @@ class SamsungRemote {
         this._scanning = false;
     }
 
+    async detectSubnet() {
+        // Try to determine the local subnet
+        // Method: Use WebRTC to detect local IP
+        return new Promise((resolve) => {
+            try {
+                const pc = new RTCPeerConnection({ iceServers: [] });
+                pc.createDataChannel('');
+                pc.createOffer().then(offer => pc.setLocalDescription(offer));
+                pc.onicecandidate = (event) => {
+                    if (event && event.candidate && event.candidate.candidate) {
+                        const match = event.candidate.candidate.match(/(\d+\.\d+\.\d+\.)\d+/);
+                        if (match) {
+                            pc.close();
+                            resolve(match[1]);
+                            return;
+                        }
+                    }
+                };
+                // Fallback after timeout
+                setTimeout(() => {
+                    pc.close();
+                    resolve('192.168.1.');
+                }, 3000);
+            } catch (e) {
+                resolve('192.168.1.');
+            }
+        });
+    }
+
+    async checkForSamsungTV(ip) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 1500);
+
+            const response = await fetch(`http://${ip}:8001/api/v2/`, {
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeout);
+            const data = await response.json();
+
+            if (data?.device?.type === 'Samsung SmartTV') {
+                return {
+                    ip: ip,
+                    mac: data.device.wifiMac || '',
+                    hostname: '',
+                    type: 'samsung-tv',
+                    label: data.device.name || 'Samsung Smart TV',
+                    icon: '📺',
+                    isSamsungTV: true,
+                    tvInfo: data.device,
+                    ports: { samsung_http: true, samsung_wss: true },
+                };
+            }
+        } catch (e) {
+            // Not a Samsung TV or unreachable
+        }
+        return null;
+    }
+
     renderScanResults(data) {
         const { devices, samsungTVs, network } = data;
 
         // Update title
         this.scanResultsTitle.textContent = samsungTVs > 0
-            ? `📺 ${samsungTVs} Samsung TV${samsungTVs > 1 ? 's' : ''} · ${devices.length} dispositivos`
+            ? `📺 ${samsungTVs} Samsung TV${samsungTVs > 1 ? 's' : ''} encontrado${samsungTVs > 1 ? 's' : ''}`
             : `${devices.length} dispositivos encontrados`;
 
         // Build device cards HTML
@@ -585,24 +765,21 @@ class SamsungRemote {
             `;
         } else {
             this.scanResultsList.innerHTML = devices.map(device => {
-                const isTv = device.isSamsungTV;
                 const tvName = device.tvInfo?.name || device.label;
                 const tvModel = device.tvInfo?.modelName ? ` · ${device.tvInfo.modelName}` : '';
-                const hostname = device.hostname ? ` · ${device.hostname}` : '';
-                const details = `${device.ip} · ${device.mac}${tvModel}${hostname}`;
-                const badge = isTv ? 'Smart TV' : device.label;
+                const details = `${device.ip} · ${device.mac}${tvModel}`;
 
                 return `
-                    <div class="device-card ${isTv ? 'samsung-tv' : ''}" 
+                    <div class="device-card samsung-tv" 
                          data-ip="${device.ip}" 
                          data-mac="${device.mac}"
-                         data-is-tv="${isTv}">
+                         data-is-tv="true">
                         <div class="device-card-icon">${device.icon}</div>
                         <div class="device-card-info">
                             <div class="device-card-name">${tvName}</div>
                             <div class="device-card-details">${details}</div>
                         </div>
-                        <span class="device-card-badge">${badge}</span>
+                        <span class="device-card-badge">Smart TV</span>
                     </div>
                 `;
             }).join('');
@@ -620,7 +797,6 @@ class SamsungRemote {
     selectDevice(card) {
         const ip = card.dataset.ip;
         const mac = card.dataset.mac;
-        const isTv = card.dataset.isTv === 'true';
 
         // Fill in the IP
         this.tvIpInput.value = ip;
@@ -641,19 +817,13 @@ class SamsungRemote {
             card.style.background = '';
         }, 300);
 
-        // If it's a Samsung TV, auto-connect
-        if (isTv) {
-            this.showToast(`📺 Samsung TV detectado en ${ip}`, 'success');
-            // Scroll to connect button
-            this.connectBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // Optional: auto-connect after short delay
-            setTimeout(() => {
-                this.connectBtn.classList.add('btn-pressed');
-                setTimeout(() => this.connectBtn.classList.remove('btn-pressed'), 150);
-            }, 400);
-        } else {
-            this.showToast(`📋 IP ${ip} copiada`, 'info');
-        }
+        this.showToast(`📺 Samsung TV detectado en ${ip}`, 'success');
+        // Scroll to connect button
+        this.connectBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+            this.connectBtn.classList.add('btn-pressed');
+            setTimeout(() => this.connectBtn.classList.remove('btn-pressed'), 150);
+        }, 400);
     }
 
     // ─── PWA Service Worker ─────────────────────────────────────────

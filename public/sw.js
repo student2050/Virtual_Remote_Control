@@ -1,11 +1,12 @@
-// Service Worker for Samsung TV Remote Control PWA
-const CACHE_NAME = 'tv-remote-v5';
+// Service Worker for Samsung TV Remote Control PWA v2.0
+const CACHE_NAME = 'tv-remote-v6';
 const ASSETS = [
     '/',
     '/index.html',
     '/css/style.css',
     '/js/app.js',
     '/manifest.json',
+    '/icons/icon-192.svg',
 ];
 
 // Install event - cache assets
@@ -28,23 +29,16 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch event - network first for API calls, cache first for assets
+// Fetch event - only cache our own static assets, pass through everything else
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // Network first for API calls
-    if (url.pathname.startsWith('/api/')) {
-        event.respondWith(
-            fetch(event.request).catch(() =>
-                new Response(JSON.stringify({ error: 'Offline' }), {
-                    headers: { 'Content-Type': 'application/json' },
-                })
-            )
-        );
+    // Don't intercept WebSocket or cross-origin requests (TV API calls, etc.)
+    if (url.origin !== self.location.origin) {
         return;
     }
 
-    // Cache first for static assets
+    // Cache first for our static assets
     event.respondWith(
         caches.match(event.request).then((cached) =>
             cached || fetch(event.request).then((response) => {
@@ -52,6 +46,11 @@ self.addEventListener('fetch', (event) => {
                 caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
                 return response;
             })
-        )
+        ).catch(() => {
+            // Offline fallback for main page
+            if (event.request.mode === 'navigate') {
+                return caches.match('/');
+            }
+        })
     );
 });
