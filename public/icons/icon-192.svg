@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a3e"/>
+      <stop offset="100%" style="stop-color:#0a0a1a"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="192" height="192" rx="38" fill="url(#bg)"/>
+  <!-- TV body -->
+  <rect x="40" y="45" width="112" height="72" rx="8" fill="none" stroke="url(#glow)" stroke-width="4"/>
+  <!-- Screen -->
+  <rect x="48" y="52" width="96" height="58" rx="4" fill="#1e1b4b" opacity="0.8"/>
+  <!-- Screen reflection -->
+  <rect x="48" y="52" width="96" height="29" rx="4" fill="#6366f1" opacity="0.08"/>
+  <!-- Stand -->
+  <rect x="82" y="117" width="28" height="4" rx="2" fill="url(#glow)"/>
+  <rect x="72" y="121" width="48" height="3" rx="1.5" fill="url(#glow)" opacity="0.7"/>
+  <!-- Power button dot -->
+  <circle cx="96" cy="81" r="8" fill="#6366f1" opacity="0.3"/>
+  <circle cx="96" cy="81" r="4" fill="#818cf8"/>
+  <!-- Remote waves -->
+  <path d="M 56 140 Q 96 130 136 140" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.3"/>
+  <path d="M 64 148 Q 96 140 128 148" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.2"/>
+</svg>

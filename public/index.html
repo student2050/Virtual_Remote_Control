@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <meta name="description"
+    content="Control remoto virtual para Samsung Smart TV - Controla tu TV desde cualquier dispositivo">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TV Remote">
+  <meta name="theme-color" content="#6366f1">
+  <title>Samsung TV Remote Control</title>
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+  <!-- Connection Modal -->
+  <div id="connectionModal" class="modal active">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="tv-icon">📺</div>
+        <h1>Samsung TV Remote</h1>
+        <p>Conecta tu TV para empezar a controlarla</p>
+      </div>
+      <div class="modal-body">
+        <!-- Network Scanner Section -->
+        <div class="scanner-section">
+          <button id="scanBtn" class="btn-scan">
+            <span class="scan-btn-content" id="scanBtnContent">
+              <svg class="scan-icon" viewBox="0 0 24 24" width="20" height="20">
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+                <path d="M16.24 7.76a6 6 0 0 1 0 8.49" stroke="currentColor" stroke-width="2" fill="none"
+                  stroke-linecap="round" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="2" fill="none"
+                  stroke-linecap="round" />
+                <path d="M7.76 16.24a6 6 0 0 1 0-8.49" stroke="currentColor" stroke-width="2" fill="none"
+                  stroke-linecap="round" />
+                <path d="M4.93 19.07a10 10 0 0 1 0-14.14" stroke="currentColor" stroke-width="2" fill="none"
+                  stroke-linecap="round" />
+              </svg>
+              <span>Escanear Red</span>
+            </span>
+            <span class="scan-btn-loading" id="scanBtnLoading" style="display:none;">
+              <span class="scanner-radar"></span>
+              <span>Escaneando red...</span>
+            </span>
+          </button>
+
+          <!-- Scan Progress -->
+          <div id="scanProgress" class="scan-progress" style="display:none;">
+            <div class="scan-progress-bar">
+              <div class="scan-progress-fill" id="scanProgressFill"></div>
+            </div>
+            <span class="scan-progress-text" id="scanProgressText">Buscando dispositivos...</span>
+          </div>
+
+          <!-- Scan Results -->
+          <div id="scanResults" class="scan-results" style="display:none;">
+            <div class="scan-results-header">
+              <span class="scan-results-title" id="scanResultsTitle">Dispositivos encontrados</span>
+              <button class="scan-results-close" id="scanResultsClose">✕</button>
+            </div>
+            <div class="scan-results-list" id="scanResultsList">
+              <!-- Device cards will be injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="modal-divider">
+          <span>o ingresa manualmente</span>
+        </div>
+
+        <!-- Manual Connection Section -->
+        <div class="input-group">
+          <label for="tvIpInput">Dirección IP del TV</label>
+          <input type="text" id="tvIpInput" placeholder="192.168.1.XXX" autocomplete="off" spellcheck="false">
+          <small>Encuéntrala en: Configuración → Red → Estado de la red</small>
+        </div>
+        <div class="input-group">
+          <label for="tvPortInput">Puerto (por defecto: 8002)</label>
+          <input type="number" id="tvPortInput" placeholder="8002" value="8002">
+        </div>
+        <div class="input-group optional">
+          <label for="tvMacInput">MAC Address (opcional - para encender TV)</label>
+          <input type="text" id="tvMacInput" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" spellcheck="false">
+        </div>
+        <button id="connectBtn" class="btn-connect">
+          <span class="btn-text">Conectar al TV</span>
+          <span class="btn-loading" style="display:none;">
+            <span class="spinner"></span> Conectando...
+          </span>
+        </button>
+        <div id="connectionError" class="error-message" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <p>💡 Asegúrate de estar en la misma red WiFi que tu TV</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Remote Control -->
+  <div id="remoteApp" class="remote-app" style="display:none;">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="status-indicator connected" id="statusIndicator"></div>
+        <span class="tv-name" id="tvName">Samsung TV</span>
+      </div>
+      <div class="header-right">
+        <span class="tv-ip" id="tvIpDisplay"></span>
+        <button class="btn-icon" id="settingsBtn" title="Configuración">⚙️</button>
+        <button class="btn-icon" id="disconnectBtn" title="Desconectar">🔌</button>
+      </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="main">
+        <span class="tab-icon">🎮</span>
+        <span class="tab-label">Control</span>
+      </button>
+      <button class="tab-btn" data-tab="numpad">
+        <span class="tab-icon">🔢</span>
+        <span class="tab-label">Números</span>
+      </button>
+      <button class="tab-btn" data-tab="apps">
+        <span class="tab-icon">📱</span>
+        <span class="tab-label">Apps</span>
+      </button>
+      <button class="tab-btn" data-tab="media">
+        <span class="tab-icon">🎬</span>
+        <span class="tab-label">Media</span>
+      </button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="tab-content">
+
+      <!-- Main Control Tab -->
+      <section id="tab-main" class="tab-panel active">
+        <!-- Power & Source Row -->
+        <div class="control-row power-row">
+          <button class="remote-btn power-btn" data-key="power" id="btnPower">
+            <svg viewBox="0 0 24 24" width="24" height="24">
+              <path d="M12 3v9m0 0a9 9 0 1 1-9-4.5M12 12a9 9 0 0 1 9-4.5" stroke="currentColor" stroke-width="2"
+                fill="none" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button class="remote-btn source-btn" data-key="source" id="btnSource">
+            <span>SOURCE</span>
+          </button>
+          <button class="remote-btn" data-key="hdmi" id="btnHdmi">
+            <span>HDMI</span>
+          </button>
+        </div>
+
+        <!-- Volume & Channel Section -->
+        <div class="vol-ch-container">
+          <!-- Volume -->
+          <div class="vol-ch-group">
+            <span class="group-label">VOL</span>
+            <button class="remote-btn round-btn" data-key="volumeUp" id="btnVolUp">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" fill="none"
+                  stroke-linecap="round" />
+              </svg>
+            </button>
+            <button class="remote-btn mute-btn" data-key="mute" id="btnMute">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M11 5L6 9H2v6h4l5 4V5zm12 4l-6 6m0-6l6 6" stroke="currentColor" stroke-width="2" fill="none"
+                  stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="remote-btn round-btn" data-key="volumeDown" id="btnVolDown">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M5 12h14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- D-Pad Navigation -->
+          <div class="dpad-container">
+            <button class="dpad-btn dpad-up" data-key="up" id="btnUp">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="dpad-btn dpad-left" data-key="left" id="btnLeft">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="dpad-center" data-key="enter" id="btnEnter">
+              OK
+            </button>
+            <button class="dpad-btn dpad-right" data-key="right" id="btnRight">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="dpad-btn dpad-down" data-key="down" id="btnDown">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Channel -->
+          <div class="vol-ch-group">
+            <span class="group-label">CH</span>
+            <button class="remote-btn round-btn" data-key="channelUp" id="btnChUp">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="remote-btn guide-btn" data-key="guide" id="btnGuide">
+              <span>GUIDE</span>
+            </button>
+            <button class="remote-btn round-btn" data-key="channelDown" id="btnChDown">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Navigation Row -->
+        <div class="control-row nav-row">
+          <button class="remote-btn nav-btn" data-key="back" id="btnBack">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M19 12H5m0 0l7 7m-7-7l7-7" stroke="currentColor" stroke-width="2" fill="none"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Back</span>
+          </button>
+          <button class="remote-btn nav-btn home-btn" data-key="home" id="btnHome">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path
+                d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10"
+                stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Home</span>
+          </button>
+          <button class="remote-btn nav-btn" data-key="menu" id="btnMenu">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" fill="none"
+                stroke-linecap="round" />
+            </svg>
+            <span>Menu</span>
+          </button>
+          <button class="remote-btn nav-btn" data-key="exit" id="btnExit">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" fill="none"
+                stroke-linecap="round" />
+            </svg>
+            <span>Exit</span>
+          </button>
+        </div>
+
+        <!-- Color Buttons -->
+        <div class="control-row color-row">
+          <button class="remote-btn color-btn color-red" data-key="red" id="btnRed"></button>
+          <button class="remote-btn color-btn color-green" data-key="green" id="btnGreen"></button>
+          <button class="remote-btn color-btn color-yellow" data-key="yellow" id="btnYellow"></button>
+          <button class="remote-btn color-btn color-blue" data-key="blue" id="btnBlue"></button>
+        </div>
+      </section>
+
+      <!-- Numpad Tab -->
+      <section id="tab-numpad" class="tab-panel">
+        <div class="numpad-grid">
+          <button class="remote-btn num-btn" data-key="num1" id="btnNum1">1</button>
+          <button class="remote-btn num-btn" data-key="num2" id="btnNum2">2</button>
+          <button class="remote-btn num-btn" data-key="num3" id="btnNum3">3</button>
+          <button class="remote-btn num-btn" data-key="num4" id="btnNum4">4</button>
+          <button class="remote-btn num-btn" data-key="num5" id="btnNum5">5</button>
+          <button class="remote-btn num-btn" data-key="num6" id="btnNum6">6</button>
+          <button class="remote-btn num-btn" data-key="num7" id="btnNum7">7</button>
+          <button class="remote-btn num-btn" data-key="num8" id="btnNum8">8</button>
+          <button class="remote-btn num-btn" data-key="num9" id="btnNum9">9</button>
+          <button class="remote-btn num-btn" data-key="channelList" id="btnChList">CH List</button>
+          <button class="remote-btn num-btn" data-key="num0" id="btnNum0">0</button>
+          <button class="remote-btn num-btn" data-key="info" id="btnInfo">INFO</button>
+        </div>
+      </section>
+
+      <!-- Apps Tab -->
+      <section id="tab-apps" class="tab-panel">
+        <div class="apps-grid">
+          <button class="app-btn" data-app="11101200001" id="appNetflix">
+            <div class="app-icon netflix-icon">N</div>
+            <span>Netflix</span>
+          </button>
+          <button class="app-btn" data-app="111299001912" id="appYoutube">
+            <div class="app-icon youtube-icon">▶</div>
+            <span>YouTube</span>
+          </button>
+          <button class="app-btn" data-app="3201512006785" id="appPrime">
+            <div class="app-icon prime-icon">P</div>
+            <span>Prime Video</span>
+          </button>
+          <button class="app-btn" data-app="3201601007250" id="appDisney">
+            <div class="app-icon disney-icon">D+</div>
+            <span>Disney+</span>
+          </button>
+          <button class="app-btn" data-app="3201606009684" id="appHBO">
+            <div class="app-icon hbo-icon">MAX</div>
+            <span>HBO Max</span>
+          </button>
+          <button class="app-btn" data-app="3201611010983" id="appSpotify">
+            <div class="app-icon spotify-icon">♪</div>
+            <span>Spotify</span>
+          </button>
+          <button class="app-btn" data-app="3201608010191" id="appAppleTV">
+            <div class="app-icon appletv-icon">🍎</div>
+            <span>Apple TV+</span>
+          </button>
+          <button class="app-btn" data-app="3201710015037" id="appTwitch">
+            <div class="app-icon twitch-icon">T</div>
+            <span>Twitch</span>
+          </button>
+          <button class="app-btn" data-app="111012010001" id="appBrowser">
+            <div class="app-icon browser-icon">🌐</div>
+            <span>Navegador</span>
+          </button>
+          <button class="app-btn" data-app="3201512006963" id="appPlex">
+            <div class="app-icon plex-icon">▷</div>
+            <span>Plex</span>
+          </button>
+          <button class="app-btn" data-app="3201606009910" id="appDeezer">
+            <div class="app-icon deezer-icon">♫</div>
+            <span>Deezer</span>
+          </button>
+          <button class="app-btn" data-app="3201512006963" id="appSettings">
+            <div class="app-icon settings-icon">⚙️</div>
+            <span>Ajustes</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Media Tab -->
+      <section id="tab-media" class="tab-panel">
+        <div class="media-controls">
+          <div class="media-row">
+            <button class="remote-btn media-btn" data-key="rewind" id="btnRewind">
+              <svg viewBox="0 0 24 24" width="24" height="24">
+                <path d="M11 19l-9-7 9-7v14zm11 0l-9-7 9-7v14z" fill="currentColor" />
+              </svg>
+              <span>Rewind</span>
+            </button>
+            <button class="remote-btn media-btn play-pause-btn" data-key="play" id="btnPlay">
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path d="M5 3l14 9-14 9V3z" fill="currentColor" />
+              </svg>
+              <span>Play</span>
+            </button>
+            <button class="remote-btn media-btn" data-key="pause" id="btnPause">
+              <svg viewBox="0 0 24 24" width="24" height="24">
+                <path d="M6 4h4v16H6zm8 0h4v16h-4z" fill="currentColor" />
+              </svg>
+              <span>Pause</span>
+            </button>
+            <button class="remote-btn media-btn" data-key="fastForward" id="btnFF">
+              <svg viewBox="0 0 24 24" width="24" height="24">
+                <path d="M13 19V5l9 7-9 7zM2 19V5l9 7-9 7z" fill="currentColor" />
+              </svg>
+              <span>Forward</span>
+            </button>
+          </div>
+          <div class="media-row">
+            <button class="remote-btn media-btn" data-key="stop" id="btnStop">
+              <svg viewBox="0 0 24 24" width="22" height="22">
+                <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" />
+              </svg>
+              <span>Stop</span>
+            </button>
+            <button class="remote-btn media-btn" data-key="record" id="btnRecord">
+              <svg viewBox="0 0 24 24" width="22" height="22">
+                <circle cx="12" cy="12" r="8" fill="#e53935" />
+              </svg>
+              <span>Record</span>
+            </button>
+          </div>
+          <div class="media-extra">
+            <button class="remote-btn" data-key="info" id="btnMediaInfo">
+              <span>ℹ️ Info</span>
+            </button>
+            <button class="remote-btn" data-key="tools" id="btnTools">
+              <span>🔧 Tools</span>
+            </button>
+            <button class="remote-btn" data-key="sleep" id="btnSleep">
+              <span>💤 Sleep</span>
+            </button>
+            <button class="remote-btn" data-key="pictureSize" id="btnPicSize">
+              <span>🖼️ P.Size</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+
+</html>

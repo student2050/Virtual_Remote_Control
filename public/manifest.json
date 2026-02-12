@@ -1,0 +1,22 @@
+{
+    "name": "Samsung TV Remote Control",
+    "short_name": "TV Remote",
+    "description": "Control remoto virtual para Samsung Smart TV",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#0a0a1a",
+    "theme_color": "#6366f1",
+    "icons": [
+        {
+            "src": "/icons/icon-192.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ],
+    "categories": [
+        "utilities",
+        "entertainment"
+    ]
+}
