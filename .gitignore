@@ -1,0 +1,9 @@
+node_modules/
+agent/node_modules/
+.env
+.DS_Store
+*.log
+data/
+*.db
+*.db-shm
+*.db-wal

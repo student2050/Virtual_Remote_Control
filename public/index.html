@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Antigravity Remote</title>
+  <meta name="description" content="Controla tu agente AI desde tu móvil. Chat, aprobaciones y monitoreo en tiempo real." />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Antigravity" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AUTH SCREEN
+═══════════════════════════════════════════════════════════════ -->
+<div id="screen-auth" class="screen active">
+  <div class="auth-bg">
+    <div class="auth-orb auth-orb-1"></div>
+    <div class="auth-orb auth-orb-2"></div>
+    <div class="auth-orb auth-orb-3"></div>
+  </div>
+  <div class="auth-container">
+    <div class="auth-logo">
+      <div class="logo-icon">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path d="M18 3L33 30H3L18 3Z" fill="url(#logoGrad)" />
+          <path d="M18 10L27 26H9L18 10Z" fill="rgba(0,0,0,0.4)" />
+          <defs>
+            <linearGradient id="logoGrad" x1="3" y1="3" x2="33" y2="30" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#a78bfa"/>
+              <stop offset="100%" stop-color="#38bdf8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="logo-text">Antigravity</span>
+    </div>
+    <p class="auth-tagline">Tu agente AI, en tu bolsillo</p>
+
+    <!-- Tab switcher -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Entrar</button>
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Crear cuenta</button>
+    </div>
+
+    <!-- Login Form -->
+    <form id="form-login" class="auth-form" onsubmit="handleLogin(event)">
+      <div class="field-group">
+        <label class="field-label">Email</label>
+        <input id="login-email" type="email" class="field-input" placeholder="tu@email.com" autocomplete="email" required />
+      </div>
+      <div class="field-group">
+        <label class="field-label">Contraseña</label>
+        <input id="login-password" type="password" class="field-input" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <div id="login-error" class="form-error hidden"></div>
+      <button type="submit" class="btn-primary btn-full" id="btn-login">
+        <span class="btn-text">Entrar</span>
+        <span class="btn-spinner hidden"></span>
+      </button>
+    </form>
+
+    <!-- Register Form -->
+    <form id="form-register" class="auth-form hidden" onsubmit="handleRegister(event)">
+      <div class="field-group">
+        <label class="field-label">Nombre</label>
+        <input id="reg-name" type="text" class="field-input" placeholder="Tu nombre" autocomplete="name" required />
+      </div>
+      <div class="field-group">
+        <label class="field-label">Email</label>
+        <input id="reg-email" type="email" class="field-input" placeholder="tu@email.com" autocomplete="email" required />
+      </div>
+      <div class="field-group">
+        <label class="field-label">Contraseña</label>
+        <input id="reg-password" type="password" class="field-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required />
+      </div>
+      <div id="reg-error" class="form-error hidden"></div>
+      <button type="submit" class="btn-primary btn-full" id="btn-register">
+        <span class="btn-text">Crear cuenta gratis</span>
+        <span class="btn-spinner hidden"></span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MAIN APP SCREEN
+═══════════════════════════════════════════════════════════════ -->
+<div id="screen-app" class="screen hidden">
+
+  <!-- ── Top Header ── -->
+  <header class="app-header" id="app-header">
+    <div class="header-left">
+      <div class="header-logo">
+        <svg width="22" height="22" viewBox="0 0 36 36" fill="none">
+          <path d="M18 3L33 30H3L18 3Z" fill="url(#hLogoGrad)"/>
+          <path d="M18 10L27 26H9L18 10Z" fill="rgba(0,0,0,0.4)"/>
+          <defs><linearGradient id="hLogoGrad" x1="3" y1="3" x2="33" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#38bdf8"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="header-info">
+        <span class="header-title" id="header-workspace-name">Workspace</span>
+        <div class="agent-status-pill" id="agent-status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Conectando...</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" id="approval-badge-btn" onclick="switchTab('approvals')" style="position:relative">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span class="badge" id="approval-badge" style="display:none">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Tab Content ── -->
+  <main class="app-main">
+
+    <!-- CHAT TAB -->
+    <section id="tab-chat" class="tab-panel active">
+      <div class="messages-list" id="messages-list">
+        <div class="messages-empty" id="messages-empty">
+          <div class="empty-icon">💬</div>
+          <p>Inicia una conversación<br/>con tu agente AI</p>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="quick-actions" id="quick-actions">
+          <button class="quick-btn" onclick="sendQuick('estado')">📊 Estado</button>
+          <button class="quick-btn" onclick="sendQuick('¿qué estás haciendo?')">🤔 ¿Qué haces?</button>
+          <button class="quick-btn" onclick="sendQuick('muestra el progreso')">📈 Progreso</button>
+          <button class="quick-btn" onclick="sendQuick('pausa')">⏸ Pausa</button>
+        </div>
+        <div class="chat-input-row">
+          <textarea id="msg-input" class="chat-textarea" placeholder="Escríbele a tu agente..." rows="1" onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPROVALS TAB -->
+    <section id="tab-approvals" class="tab-panel hidden">
+      <div class="panel-header">
+        <h2 class="panel-title">Aprobaciones</h2>
+        <span class="panel-subtitle" id="approvals-count-label">Pendientes: 0</span>
+      </div>
+      <div id="approvals-list" class="approvals-list">
+        <div class="empty-state" id="approvals-empty">
+          <div class="empty-icon">✅</div>
+          <p>Sin aprobaciones pendientes</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY TAB -->
+    <section id="tab-activity" class="tab-panel hidden">
+      <div class="panel-header">
+        <h2 class="panel-title">Actividad</h2>
+        <button class="text-btn" onclick="loadActivity()">↻ Actualizar</button>
+      </div>
+      <div id="activity-list" class="activity-list">
+        <div class="empty-state" id="activity-empty">
+          <div class="empty-icon">📋</div>
+          <p>No hay actividad aún</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS TAB -->
+    <section id="tab-settings" class="tab-panel hidden">
+      <div class="panel-header">
+        <h2 class="panel-title">Configuración</h2>
+      </div>
+      <div class="settings-content">
+
+        <!-- Profile Card -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="user-avatar" id="settings-avatar">?</div>
+            <div>
+              <div class="settings-user-name" id="settings-name">—</div>
+              <div class="settings-user-email" id="settings-email">—</div>
+              <span class="plan-badge" id="settings-plan">FREE</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Key -->
+        <div class="settings-card">
+          <div class="settings-section-title">🔑 API Key (para tu Mac)</div>
+          <div class="api-key-display">
+            <span class="api-key-text" id="api-key-display">ag_••••••••••••••••••••••••••••••••</span>
+            <button class="icon-btn-sm" onclick="toggleApiKey()" id="btn-reveal-key" title="Mostrar/ocultar">👁</button>
+          </div>
+          <button class="btn-secondary btn-sm" onclick="copyApiKey()">📋 Copiar clave</button>
+        </div>
+
+        <!-- Install Agent Instructions -->
+        <div class="settings-card">
+          <div class="settings-section-title">🖥 Instalar en tu Mac</div>
+          <p class="settings-hint">Ejecuta esto en tu Mac para conectar el agente:</p>
+          <div class="code-block">
+            <code id="install-cmd">Cargando...</code>
+            <button class="copy-code-btn" onclick="copyInstallCmd()">Copiar</button>
+          </div>
+        </div>
+
+        <!-- Connection Info -->
+        <div class="settings-card">
+          <div class="settings-section-title">📡 Estado de Conexión</div>
+          <div class="info-rows">
+            <div class="info-row">
+              <span class="info-label">Servidor</span>
+              <span class="info-value" id="info-server">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">WebSocket</span>
+              <span class="info-value" id="info-ws">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Agente local</span>
+              <span class="info-value" id="info-agent">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Plan</span>
+              <span class="info-value" id="info-plan">Free</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-danger btn-full" onclick="logout()">↩ Cerrar sesión</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Bottom Navigation ── -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-chat" onclick="switchTab('chat')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Chat</span>
+    </button>
+    <button class="nav-btn" id="nav-approvals" onclick="switchTab('approvals')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 11 12 14 22 4"/>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+      <span>Aprobar</span>
+      <span class="nav-badge" id="nav-approvals-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-btn" id="nav-activity" onclick="switchTab('activity')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      <span>Actividad</span>
+    </button>
+    <button class="nav-btn" id="nav-settings" onclick="switchTab('settings')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.07 4.93A10 10 0 0 1 21 12a10 10 0 0 1-1.93 7.07M4.93 4.93A10 10 0 0 0 3 12a10 10 0 0 0 1.93 7.07M12 2v2M12 20v2M2 12h2M20 12h2"/>
+      </svg>
+      <span>Config</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     APPROVAL MODAL
+═══════════════════════════════════════════════════════════════ -->
+<div id="approval-modal" class="modal-overlay hidden" onclick="closeApprovalModal(event)">
+  <div class="modal-card" id="approval-modal-card">
+    <div class="modal-handle"></div>
+    <div class="modal-risk-banner" id="modal-risk-banner">
+      <span id="modal-risk-icon">⚠️</span>
+      <span id="modal-risk-label">RIESGO MEDIO</span>
+    </div>
+    <h3 class="modal-title" id="modal-title">Título</h3>
+    <p class="modal-desc" id="modal-desc">Descripción</p>
+    <div class="modal-command-block" id="modal-command-block">
+      <span class="modal-command-label">Comando:</span>
+      <code id="modal-command">—</code>
+    </div>
+    <div class="modal-timer">
+      <span class="timer-icon">⏱</span>
+      <span id="modal-timer-text">Expira en 10:00</span>
+      <div class="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-reject" onclick="resolveApproval('rejected')">
+        <span>✕</span> Rechazar
+      </button>
+      <button class="btn-approve" onclick="resolveApproval('approved')">
+        <span>✓</span> Aprobar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notifications -->
+<div id="toast-container"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

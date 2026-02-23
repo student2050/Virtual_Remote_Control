@@ -1,0 +1,43 @@
+{
+    "name": "Antigravity Remote",
+    "short_name": "Antigravity",
+    "description": "Controla tu agente AI desde tu móvil",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#09090f",
+    "theme_color": "#09090f",
+    "lang": "es",
+    "icons": [
+        {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "productivity",
+        "utilities"
+    ],
+    "shortcuts": [
+        {
+            "name": "Chat",
+            "short_name": "Chat",
+            "description": "Abrir chat con el agente",
+            "url": "/#chat",
+            "icons": [
+                {
+                    "src": "/icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ]
+}

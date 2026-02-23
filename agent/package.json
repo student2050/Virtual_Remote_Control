@@ -1,0 +1,35 @@
+{
+    "name": "@antigravity/agent",
+    "version": "1.0.0",
+    "description": "Antigravity local agent — connect your Mac to the Antigravity SaaS platform",
+    "main": "src/index.js",
+    "bin": {
+        "antigravity-agent": "src/index.js",
+        "ag-agent": "src/index.js"
+    },
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "node src/index.js"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "keywords": [
+        "antigravity",
+        "agent",
+        "ai",
+        "remote",
+        "cli"
+    ],
+    "author": "Antigravity",
+    "license": "MIT",
+    "dependencies": {
+        "socket.io-client": "^4.7.4",
+        "dotenv": "^16.3.1",
+        "chalk": "^4.1.2",
+        "ora": "^5.4.1",
+        "conf": "^10.2.0",
+        "node-fetch": "^2.7.0",
+        "readline": "^1.3.0"
+    }
+}

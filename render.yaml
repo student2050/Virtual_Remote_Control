@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: antigravity-remote
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    # Persistent disk for SQLite database (survives restarts)
+    disk:
+      name: antigravity-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: APP_URL
+        fromService:
+          type: web
+          name: antigravity-remote
+          property: host
+      - key: DB_PATH
+        value: /data/antigravity.db
+      - key: JWT_SECRET
+        generateValue: true
