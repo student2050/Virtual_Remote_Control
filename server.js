@@ -107,6 +107,19 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // Setup tunnel in dev mode
   if (!IS_PRODUCTION) setupLocalTunnel(PORT);
+
+  // ── Keep-alive ping (production only) ───────────────────────────────────────
+  // Render free tier sleeps after 15min of inactivity — self-ping every 10 min
+  if (IS_PRODUCTION && APP_URL && !APP_URL.includes('localhost')) {
+    const https = require('https');
+    setInterval(() => {
+      const url = new URL('/health', APP_URL.startsWith('http') ? APP_URL : `https://${APP_URL}`);
+      https.get(url.toString(), (res) => {
+        // silent ping
+      }).on('error', () => { });
+    }, 10 * 60 * 1000); // every 10 minutes
+    console.log('  ♾️  Keep-alive ping activo (cada 10 min)\n');
+  }
 });
 
 // ─── Local Tunnel (dev only) ──────────────────────────────────────────────────
