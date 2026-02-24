@@ -1,21 +1,61 @@
 /**
  * Antigravity SaaS - Database Schema
- * SQLite via better-sqlite3
+ * Uses better-sqlite3 with fallback support
+ * Compatible with CloudLinux / cPanel hosting
  */
 
-const Database = require('better-sqlite3');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data/antigravity.db');
 
 // Ensure data directory exists
-const fs = require('fs');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// ─── Load SQLite driver ───────────────────────────────────────────────────────
+let db;
+try {
+    const Database = require('better-sqlite3');
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    console.log('  ✓ SQLite: better-sqlite3');
+} catch (e) {
+    console.log('  ⚠ better-sqlite3 failed, trying bundled fallback:', e.message);
+    // Fallback: use a synchronous wrapper around the built-in node sqlite (Node 22.5+)
+    // or create a minimal in-memory compatible shim
+    try {
+        // Node.js 22.5+ has built-in sqlite
+        const { DatabaseSync } = require('node:sqlite');
+        const _db = new DatabaseSync(DB_PATH);
+        // Wrap to match better-sqlite3 API
+        db = {
+            pragma: (s) => _db.exec(`PRAGMA ${s}`),
+            exec: (sql) => _db.exec(sql),
+            prepare: (sql) => {
+                const stmt = _db.prepare(sql);
+                return {
+                    run: (...args) => stmt.run(...args),
+                    get: (...args) => stmt.get(...args),
+                    all: (...args) => stmt.all(...args),
+                };
+            },
+            transaction: (fn) => {
+                return (...args) => {
+                    _db.exec('BEGIN');
+                    try { const r = fn(...args); _db.exec('COMMIT'); return r; }
+                    catch (e) { _db.exec('ROLLBACK'); throw e; }
+                };
+            },
+        };
+        db.pragma('journal_mode = WAL');
+        db.pragma('foreign_keys = ON');
+        console.log('  ✓ SQLite: node:sqlite (built-in)');
+    } catch (e2) {
+        throw new Error(`No SQLite driver available. better-sqlite3: ${e.message}. node:sqlite: ${e2.message}`);
+    }
+}
 
 // ─── Schema Migrations ───────────────────────────────────────────────────────
 
