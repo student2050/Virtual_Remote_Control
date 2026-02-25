@@ -35,11 +35,17 @@ function initSocket(io) {
 
                 // Verify workspace access  
                 const ws = db.prepare('SELECT id FROM workspaces WHERE id = ? AND user_id = ?').get(workspaceId, user.id);
-                if (!ws) { socket.disconnect(); return; }
+                if (!ws) {
+                    // Stale session — workspace no longer exists (e.g. server restarted)
+                    socket.emit('auth_error', { code: 'STALE_SESSION', message: 'Session expired, please log in again' });
+                    socket.disconnect();
+                    return;
+                }
 
                 context = { type: 'user', workspaceId, userId: user.id, user };
                 console.log(`  📱 User connected: ${user.email} → workspace:${workspaceId}`);
             } catch {
+                socket.emit('auth_error', { code: 'INVALID_TOKEN', message: 'Invalid token' });
                 socket.disconnect();
                 return;
             }
@@ -118,10 +124,12 @@ function initSocket(io) {
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(message.id, message.workspace_id, message.content, message.role, message.message_type, message.metadata, message.created_at);
 
-                // Broadcast to everyone in workspace (agent + other user tabs)
-                io.to(`workspace:${context.workspaceId}`).emit('new_message', message);
-                // Also emit user_message so the local agent receives it
-                io.to(`workspace:${context.workspaceId}`).emit('user_message', message);
+                const room = `workspace:${context.workspaceId}`;
+                console.log(`  💬 Message from ${context.user.email}: "${content.trim().slice(0, 50)}" → room:${room}`);
+
+                // Broadcast to mobile (new_message) AND to agent (user_message)
+                io.to(room).emit('new_message', message);
+                io.to(room).emit('user_message', message);
             });
 
             socket.on('resolve_approval', ({ approvalId, action }) => {

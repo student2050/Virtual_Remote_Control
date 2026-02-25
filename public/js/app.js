@@ -313,6 +313,14 @@ function connectSocket() {
         setAgentStatus(online);
         showToast(online ? '🟢 Agente conectado desde tu Mac' : '🔴 Agente desconectado', online ? 'success' : 'info');
     });
+
+    s.on('auth_error', ({ code, message }) => {
+        if (code === 'STALE_SESSION' || code === 'INVALID_TOKEN') {
+            // Server restarted and DB was wiped — force re-login to get fresh workspaceId
+            showToast('Sesión expirada, inicia sesión de nuevo', 'info');
+            setTimeout(() => logout(), 1500);
+        }
+    });
 }
 
 // ─── Status Indicators ────────────────────────────────────────────────────────
