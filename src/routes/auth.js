@@ -170,5 +170,25 @@ router.get('/me', require('../middleware/auth').requireAuth, (req, res) => {
 
     res.json({ user: req.user, workspaces });
 });
+// ─── Admin: Reset Password (uses SEED_PASSWORD as admin secret) ─────────────
+router.post('/admin-reset', async (req, res) => {
+    const { email, newPassword, adminSecret } = req.body;
+    const seedPw = process.env.SEED_PASSWORD;
+    if (!seedPw || adminSecret !== seedPw) {
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!email || !newPassword || newPassword.length < 8) {
+        return res.status(400).json({ error: 'Email and newPassword (8+ chars) required' });
+    }
+    try {
+        const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        const hash = await bcrypt.hash(newPassword, 12);
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, user.id);
+        res.json({ success: true, message: `Password reset for ${email}` });
+    } catch (err) {
+        res.status(500).json({ error: 'Reset failed' });
+    }
+});
 
 module.exports = router;
