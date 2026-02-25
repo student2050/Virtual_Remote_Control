@@ -73,6 +73,7 @@ async function startup() {
     connector.connect();
     setupSocketEvents();
     setupHeartbeat();
+    startInboxPolling();  // poll inbox every 3s as reliable fallback
     setupREPL();
 
     // Log startup activity
@@ -97,23 +98,11 @@ function setupSocketEvents() {
     });
 
     connector.on('user_message', async (msg) => {
-        // A message came from mobile — the agent could forward this to a local AI
-        // For now, we show it in terminal and let the REPL handle responses
+        // Socket delivered the message — show it and handle it
+        // (inbox polling will skip it since socket fires faster)
         log.userMessage(msg.content);
-
-        // Built-in command responses
-        const lower = msg.content.toLowerCase().trim();
-        if (lower === 'estado' || lower === 'status') {
-            await api.sendMessage(
-                `📊 **Estado del agente**\n` +
-                `• Hostname: \`${os.hostname()}\`\n` +
-                `• Platform: ${os.type()} ${os.arch()}\n` +
-                `• Node: ${process.version}\n` +
-                `• Uptime: ${formatUptime(process.uptime())}\n` +
-                `• Memoria: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB`,
-                'agent'
-            ).catch(() => { });
-        }
+        if (msg.created_at > lastInboxTime) lastInboxTime = msg.created_at;
+        await handleUserMessage(msg);
     });
 
     connector.on('approval_resolved', async ({ approvalId, action }) => {
@@ -128,6 +117,55 @@ function setupHeartbeat() {
         await api.ping().catch(() => { });
     }, 30 * 1000);
 }
+
+// ─── Inbox Polling (poll for new user messages every 3s) ─────────────────────
+// Belt-and-suspenders: if the socket user_message event is missed, polling catches it
+function startInboxPolling() {
+    setInterval(async () => {
+        try {
+            const { messages } = await api.getInbox(lastInboxTime);
+            if (!messages || messages.length === 0) return;
+
+            for (const msg of messages) {
+                // Update last seen timestamp
+                if (msg.created_at > lastInboxTime) lastInboxTime = msg.created_at;
+                // Show and process
+                log.userMessage(msg.content);
+                await handleUserMessage(msg);
+            }
+        } catch { /* server may be temporarily unreachable */ }
+    }, 3000);
+}
+
+// ─── Shared user message handler ─────────────────────────────────────────────
+async function handleUserMessage(msg) {
+    const lower = msg.content.toLowerCase().trim();
+
+    if (lower === 'estado' || lower === 'status') {
+        await api.sendMessage(
+            `📊 **Estado del agente**\n` +
+            `• Hostname: \`${os.hostname()}\`\n` +
+            `• Platform: ${os.type()} ${os.arch()}\n` +
+            `• Node: ${process.version}\n` +
+            `• Uptime: ${formatUptime(process.uptime())}\n` +
+            `• Memoria: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB`,
+            'agent'
+        ).catch(() => { });
+    } else if (lower.includes('qué') && lower.includes('hac') || lower === '¿qué estás haciendo?') {
+        await api.sendMessage(
+            `🤔 En este momento estoy en espera, listo para ejecutar tus instrucciones desde el móvil.`,
+            'agent'
+        ).catch(() => { });
+    } else if (lower.includes('progreso') || lower.includes('progress')) {
+        await api.sendMessage(
+            `📈 **Progreso**: Sin tareas activas. Escríbeme una instrucción para empezar.`,
+            'agent'
+        ).catch(() => { });
+    } else if (lower === 'pausa' || lower === 'pause') {
+        await api.sendMessage(`⏸ **Pausado**. Avísame cuando quieras que continúe.`, 'agent').catch(() => { });
+    }
+}
+
 
 // ─── Interactive REPL ─────────────────────────────────────────────────────────
 function setupREPL() {
