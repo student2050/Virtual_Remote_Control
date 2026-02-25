@@ -66,7 +66,7 @@ const api = {
 
         let res;
         try {
-            res = await fetch(path, { ...opts, signal: AbortSignal.timeout(30000) });
+            res = await fetch(path, { ...opts, signal: AbortSignal.timeout(60000) });
         } catch (err) {
             // Network error (server cold start, no internet) — throw to let caller handle
             throw err;
@@ -106,16 +106,16 @@ const api = {
 };
 
 // Helper: retry a fetch-based call with countdown UX
-async function retryWithCountdown(fn, errEl, maxRetries = 3) {
+async function retryWithCountdown(fn, errEl, maxRetries = 4) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             return await fn();
         } catch (err) {
             if (attempt === maxRetries) throw err;
-            // Cold start: server waking up, wait and retry
-            const waitSec = attempt * 8;
+            // Cold start: server waking up (Render free tier), wait and retry
+            const waitSec = attempt * 10;
             for (let i = waitSec; i > 0; i--) {
-                errEl.textContent = `Servidor iniciando... reintentando en ${i}s (intento ${attempt}/${maxRetries})`;
+                errEl.textContent = `⏳ Servidor iniciando (puede tardar ~30s)... reintentando en ${i}s`;
                 errEl.classList.remove('hidden');
                 await new Promise(r => setTimeout(r, 1000));
             }
@@ -148,7 +148,7 @@ async function handleLogin(e) {
         applyAuth(data);
         initApp();
     } catch (err) {
-        errEl.textContent = 'Error de conexión. Verifica tu internet e intenta de nuevo.';
+        errEl.textContent = '⚠️ No se pudo conectar. Si el servidor está iniciando, espera 30s y toca Entrar de nuevo.';
         errEl.classList.remove('hidden');
     } finally {
         setLoading(btn, false);
