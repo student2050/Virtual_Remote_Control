@@ -58,7 +58,7 @@ function initSocket(io) {
             // Create or update agent session
             const existing = db.prepare('SELECT id FROM agent_sessions WHERE workspace_id = ? AND api_key_id = ?').get(keyRecord.workspace_id, keyRecord.id);
             if (existing) {
-                db.prepare('UPDATE agent_sessions SET socket_id = ?, is_online = 1, last_ping_at = datetime("now") WHERE id = ?').run(socket.id, existing.id);
+                db.prepare("UPDATE agent_sessions SET socket_id = ?, is_online = 1, last_ping_at = datetime('now') WHERE id = ?").run(socket.id, existing.id);
             } else {
                 db.prepare(`
           INSERT INTO agent_sessions (id, workspace_id, api_key_id, socket_id, is_online)
@@ -143,7 +143,7 @@ function initSocket(io) {
 
         socket.on('disconnect', () => {
             if (context.type === 'agent') {
-                db.prepare('UPDATE agent_sessions SET is_online = 0, disconnected_at = datetime("now") WHERE socket_id = ?').run(socket.id);
+                db.prepare("UPDATE agent_sessions SET is_online = 0, disconnected_at = datetime('now') WHERE socket_id = ?").run(socket.id);
                 io.to(`workspace:${context.workspaceId}`).emit('agent_status', { online: false });
                 console.log(`  🤖 Agent disconnected ← workspace:${context.workspaceId}`);
             } else {
