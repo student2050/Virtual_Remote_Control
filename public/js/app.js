@@ -275,13 +275,20 @@ function connectSocket() {
     });
 
     s.on('new_message', (msg) => {
-        // Avoid duplicates
-        if (!state.messages.find(m => m.id === msg.id)) {
-            state.messages.push(msg);
-            appendMessage(msg);
-            if (msg.role !== 'user' && state.currentTab !== 'chat') {
-                showToast('💬 Nuevo mensaje del agente', 'info');
+        // Avoid duplicates by ID
+        if (state.messages.find(m => m.id === msg.id)) return;
+        // Replace optimistic user message (temp-ID) with real server message
+        if (msg.role === 'user') {
+            const tempIdx = state.messages.findIndex(m => m.id?.startsWith('temp-') && m.content === msg.content);
+            if (tempIdx !== -1) {
+                state.messages[tempIdx] = msg; // swap temp → real
+                return; // already displayed
             }
+        }
+        state.messages.push(msg);
+        appendMessage(msg);
+        if (msg.role !== 'user' && state.currentTab !== 'chat') {
+            showToast('💬 Nuevo mensaje del agente', 'info');
         }
     });
 
@@ -443,6 +450,19 @@ async function sendMessage() {
 
     input.value = '';
     autoResize(input);
+
+    // Optimistic UI update — show message immediately
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg = {
+        id: tempId,
+        content,
+        role: 'user',
+        message_type: 'text',
+        metadata: '{}',
+        created_at: new Date().toISOString(),
+    };
+    state.messages.push(optimisticMsg);
+    appendMessage(optimisticMsg);
 
     if (state.socket?.connected) {
         state.socket.emit('send_message', { content });
