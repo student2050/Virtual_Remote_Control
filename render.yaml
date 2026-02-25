@@ -24,3 +24,11 @@ services:
         value: /data/antigravity.db
       - key: JWT_SECRET
         generateValue: true
+      - key: SEED_EMAIL
+        value: hanibal@virtualtec.com
+      - key: SEED_PASSWORD
+        value: Hanibal2025!
+      - key: SEED_NAME
+        value: Hanibal
+      - key: SEED_API_KEY
+        value: ag_091006efb61c462cbbb35ea33d753bba

@@ -102,6 +102,23 @@ async function seedDefaultUser() {
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(seedEmail);
     if (existing) {
       console.log(`  ✓ Seed user already exists: ${seedEmail}`);
+      // Always sync password from env (so Render restarts never break login)
+      const hash = await bcrypt.hash(seedPassword, 10);
+      db.prepare('UPDATE users SET password = ?, name = ? WHERE id = ?').run(hash, seedName, existing.id);
+      console.log(`  ✓ Password synced from SEED_PASSWORD`);
+      // Ensure API key matches SEED_API_KEY if provided
+      if (seedApiKey) {
+        const ws = db.prepare('SELECT id FROM workspaces WHERE user_id = ? LIMIT 1').get(existing.id);
+        if (ws) {
+          const existingKey = db.prepare('SELECT id FROM api_keys WHERE workspace_id = ? AND key = ?').get(ws.id, seedApiKey);
+          if (!existingKey) {
+            // Deactivate old keys and insert the seed key
+            db.prepare('UPDATE api_keys SET is_active = 0 WHERE workspace_id = ?').run(ws.id);
+            db.prepare(`INSERT INTO api_keys (id, workspace_id, user_id, key, name, is_active) VALUES (?, ?, ?, ?, 'Default Key', 1)`).run(uuidv4(), ws.id, existing.id, seedApiKey);
+            console.log(`  ✓ API Key set to: ${seedApiKey}`);
+          }
+        }
+      }
       // Show their API key
       const key = db.prepare(`
         SELECT k.key FROM api_keys k
