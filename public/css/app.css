@@ -555,12 +555,14 @@ body {
   flex: 1;
   overflow: hidden;
   position: relative;
-  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
 }
 
 .tab-panel {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   transition: opacity 0.2s, transform 0.2s;
