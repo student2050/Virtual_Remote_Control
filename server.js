@@ -85,8 +85,54 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ─── Auto-Seed Default User (survives server restarts on ephemeral DBs) ───────
+async function seedDefaultUser() {
+  const seedEmail = process.env.SEED_EMAIL;
+  const seedPassword = process.env.SEED_PASSWORD;
+  const seedName = process.env.SEED_NAME || 'Admin';
+  const seedApiKey = process.env.SEED_API_KEY; // optional fixed key
+
+  if (!seedEmail || !seedPassword) return;
+
+  const db = require('./src/db/schema');
+  const bcrypt = require('bcryptjs');
+  const { v4: uuidv4 } = require('uuid');
+
+  try {
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(seedEmail);
+    if (existing) {
+      console.log(`  ✓ Seed user already exists: ${seedEmail}`);
+      // Show their API key
+      const key = db.prepare(`
+        SELECT k.key FROM api_keys k
+        JOIN workspaces w ON w.id = k.workspace_id
+        WHERE w.user_id = ? AND k.is_active = 1 LIMIT 1
+      `).get(existing.id);
+      if (key) console.log(`  ✓ API Key: ${key.key}`);
+      return;
+    }
+
+    // Create user
+    const userId = uuidv4();
+    const wsId = uuidv4();
+    const apiKeyId = uuidv4();
+    const apiKeyVal = seedApiKey || ('ag_' + require('crypto').randomBytes(16).toString('hex'));
+    const hash = await bcrypt.hash(seedPassword, 10);
+
+    db.prepare(`INSERT INTO users (id, email, password, name, plan) VALUES (?, ?, ?, ?, 'free')`).run(userId, seedEmail, hash, seedName);
+    db.prepare(`INSERT INTO workspaces (id, user_id, name, description) VALUES (?, ?, ?, ?)`).run(wsId, userId, `${seedName}'s Workspace`, 'Default workspace');
+    db.prepare(`INSERT INTO api_keys (id, workspace_id, user_id, key, name) VALUES (?, ?, ?, ?, 'Default Key')`).run(apiKeyId, wsId, userId, apiKeyVal);
+
+    console.log(`  ✓ Seed user created: ${seedEmail}`);
+    console.log(`  ✓ API Key: ${apiKeyVal}`);
+  } catch (err) {
+    console.error('  ✕ Seed error:', err.message);
+  }
+}
+
 // ─── Startup ──────────────────────────────────────────────────────────────────
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
+
   console.log('');
   console.log('  ╔══════════════════════════════════════════════════════╗');
   console.log('  ║   🚀 ANTIGRAVITY SAAS BACKEND                        ║');
@@ -104,6 +150,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  POST /api/agent/approval   (API key)');
   console.log('  POST /api/agent/ping       (API key)');
   console.log('');
+
+  // Auto-seed default user (for ephemeral DBs like Render free tier)
+  await seedDefaultUser();
 
   // Setup tunnel in dev mode
   if (!IS_PRODUCTION) setupLocalTunnel(PORT);
