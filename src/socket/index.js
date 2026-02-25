@@ -120,6 +120,8 @@ function initSocket(io) {
 
                 // Broadcast to everyone in workspace (agent + other user tabs)
                 io.to(`workspace:${context.workspaceId}`).emit('new_message', message);
+                // Also emit user_message so the local agent receives it
+                io.to(`workspace:${context.workspaceId}`).emit('user_message', message);
             });
 
             socket.on('resolve_approval', ({ approvalId, action }) => {
