@@ -2,7 +2,7 @@ const CACHE_NAME = 'antigravity-remote-v1';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
-    '/css/styles.css',
+    '/css/app.css',
     '/js/app.js',
     '/manifest.json'
 ];

@@ -352,10 +352,14 @@ function setAgentStatus(online) {
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 async function loadMessages() {
-    const data = await api.get(`/api/workspaces/${state.workspaceId}/messages?limit=60`);
-    if (data?.messages) {
-        state.messages = data.messages;
-        renderMessages();
+    try {
+        const data = await api.get(`/api/workspaces/${state.workspaceId}/messages?limit=60`);
+        if (data?.messages) {
+            state.messages = data.messages;
+            renderMessages();
+        }
+    } catch (e) {
+        console.warn('Network error loading messages');
     }
 }
 
@@ -467,11 +471,15 @@ function autoResize(el) {
 
 // ─── Approvals ────────────────────────────────────────────────────────────────
 async function loadApprovals() {
-    const data = await api.get(`/api/workspaces/${state.workspaceId}/approvals?status=pending`);
-    if (data?.approvals) {
-        state.approvals = data.approvals;
-        renderApprovals();
-        updateApprovalBadge();
+    try {
+        const data = await api.get(`/api/workspaces/${state.workspaceId}/approvals?status=pending`);
+        if (data?.approvals) {
+            state.approvals = data.approvals;
+            renderApprovals();
+            updateApprovalBadge();
+        }
+    } catch (e) {
+        console.warn('Network error loading approvals');
     }
 }
 
@@ -619,10 +627,14 @@ async function resolveApproval(action) {
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
 async function loadActivity() {
-    const data = await api.get(`/api/workspaces/${state.workspaceId}/activity?limit=60`);
-    if (data?.activities) {
-        state.activities = data.activities;
-        renderActivity();
+    try {
+        const data = await api.get(`/api/workspaces/${state.workspaceId}/activity?limit=60`);
+        if (data?.activities) {
+            state.activities = data.activities;
+            renderActivity();
+        }
+    } catch (e) {
+        console.warn('Network error loading activity');
     }
 }
 

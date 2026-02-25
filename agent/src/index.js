@@ -56,7 +56,11 @@ log.banner({
 async function startup() {
     log.info('Verificando API key...');
     try {
-        await api.ping();
+        const pingRes = await api.ping();
+        if (pingRes && pingRes.timestamp) {
+            lastInboxTime = pingRes.timestamp;
+            // Sync polling cursor with server time to prevent clock skew missing messages
+        }
         log.success('API key válida. Conectando...');
 
         // Save key and server for future runs
@@ -98,10 +102,12 @@ function setupSocketEvents() {
     });
 
     connector.on('user_message', async (msg) => {
+        // Prevent duplicate processing if polling somehow caught it first
+        if (msg.created_at <= lastInboxTime) return;
+
         // Socket delivered the message — show it and handle it
-        // (inbox polling will skip it since socket fires faster)
         log.userMessage(msg.content);
-        if (msg.created_at > lastInboxTime) lastInboxTime = msg.created_at;
+        lastInboxTime = msg.created_at;
         await handleUserMessage(msg);
     });
 
