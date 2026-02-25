@@ -53,7 +53,7 @@ const storage = {
 
 // ─── API Client ───────────────────────────────────────────────────────────────
 const api = {
-    async request(method, path, body, retry = true) {
+    async request(method, path, body, retry = true, attempts = 1) {
         const opts = {
             method,
             headers: {
@@ -63,7 +63,14 @@ const api = {
             },
             ...(body ? { body: JSON.stringify(body) } : {}),
         };
-        const res = await fetch(path, opts);
+
+        let res;
+        try {
+            res = await fetch(path, { ...opts, signal: AbortSignal.timeout(30000) });
+        } catch (err) {
+            // Network error (server cold start, no internet) — throw to let caller handle
+            throw err;
+        }
 
         if (res.status === 401 && retry) {
             const refreshed = await this.refreshToken();
@@ -82,6 +89,7 @@ const api = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refreshToken: state.refreshToken }),
+                signal: AbortSignal.timeout(20000),
             });
             if (!res.ok) return false;
             const data = await res.json();
@@ -97,6 +105,24 @@ const api = {
     delete: (path) => api.request('DELETE', path),
 };
 
+// Helper: retry a fetch-based call with countdown UX
+async function retryWithCountdown(fn, errEl, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            if (attempt === maxRetries) throw err;
+            // Cold start: server waking up, wait and retry
+            const waitSec = attempt * 8;
+            for (let i = waitSec; i > 0; i--) {
+                errEl.textContent = `Servidor iniciando... reintentando en ${i}s (intento ${attempt}/${maxRetries})`;
+                errEl.classList.remove('hidden');
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+    }
+}
+
 // ─── Auth Functions ───────────────────────────────────────────────────────────
 async function handleLogin(e) {
     e.preventDefault();
@@ -109,7 +135,11 @@ async function handleLogin(e) {
     const password = document.getElementById('login-password').value;
 
     try {
-        const data = await api.post('/api/auth/login', { email, password });
+        const data = await retryWithCountdown(
+            () => api.post('/api/auth/login', { email, password }),
+            errEl
+        );
+        if (!data) throw new Error('no response');
         if (data.error) {
             errEl.textContent = data.error;
             errEl.classList.remove('hidden');
@@ -118,7 +148,7 @@ async function handleLogin(e) {
         applyAuth(data);
         initApp();
     } catch (err) {
-        errEl.textContent = 'Error de conexión. Verifica tu internet.';
+        errEl.textContent = 'Error de conexión. Verifica tu internet e intenta de nuevo.';
         errEl.classList.remove('hidden');
     } finally {
         setLoading(btn, false);

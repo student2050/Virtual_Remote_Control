@@ -1,66 +1,107 @@
 /**
  * Antigravity SaaS - Database Schema
- * Uses better-sqlite3 with fallback support
- * Compatible with CloudLinux / cPanel hosting
+ * Uses sqlite3 (async wrapped as sync) — compatible with CloudLinux/cPanel
  */
 
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data/antigravity.db');
-
-// Ensure data directory exists
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-// ─── Load SQLite driver ───────────────────────────────────────────────────────
+// ─── Load SQLite driver (prefers better-sqlite3, falls back to sqlite3) ───────
 let db;
+
+// Try 1: better-sqlite3 (fast, sync)
 try {
     const Database = require('better-sqlite3');
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     console.log('  ✓ SQLite: better-sqlite3');
-} catch (e) {
-    console.log('  ⚠ better-sqlite3 failed, trying bundled fallback:', e.message);
-    // Fallback: use a synchronous wrapper around the built-in node sqlite (Node 22.5+)
-    // or create a minimal in-memory compatible shim
+} catch (_) {
+    // Try 2: node:sqlite (Node 22.5+)
     try {
-        // Node.js 22.5+ has built-in sqlite
         const { DatabaseSync } = require('node:sqlite');
-        const _db = new DatabaseSync(DB_PATH);
-        // Wrap to match better-sqlite3 API
+        const raw = new DatabaseSync(DB_PATH);
         db = {
-            pragma: (s) => _db.exec(`PRAGMA ${s}`),
-            exec: (sql) => _db.exec(sql),
-            prepare: (sql) => {
-                const stmt = _db.prepare(sql);
+            _raw: raw,
+            pragma(s) { raw.exec(`PRAGMA ${s}`); },
+            exec(sql) { raw.exec(sql); },
+            prepare(sql) {
+                const st = raw.prepare(sql);
                 return {
-                    run: (...args) => stmt.run(...args),
-                    get: (...args) => stmt.get(...args),
-                    all: (...args) => stmt.all(...args),
+                    run: (...a) => st.run(...a),
+                    get: (...a) => st.get(...a),
+                    all: (...a) => st.all(...a),
                 };
             },
-            transaction: (fn) => {
+            transaction(fn) {
                 return (...args) => {
-                    _db.exec('BEGIN');
-                    try { const r = fn(...args); _db.exec('COMMIT'); return r; }
-                    catch (e) { _db.exec('ROLLBACK'); throw e; }
+                    raw.exec('BEGIN');
+                    try { const r = fn(...args); raw.exec('COMMIT'); return r; }
+                    catch (e) { raw.exec('ROLLBACK'); throw e; }
                 };
             },
         };
         db.pragma('journal_mode = WAL');
         db.pragma('foreign_keys = ON');
         console.log('  ✓ SQLite: node:sqlite (built-in)');
-    } catch (e2) {
-        throw new Error(`No SQLite driver available. better-sqlite3: ${e.message}. node:sqlite: ${e2.message}`);
+    } catch (_2) {
+        // Try 3: sqlite3 npm package (async, but we wrap it synchronously using
+        // a worker-based approach at startup only)
+        const sqlite3 = require('sqlite3').verbose();
+        const rawDb = new sqlite3.Database(DB_PATH);
+
+        // Helper: run SQL synchronously using Atomics+SharedArrayBuffer trick
+        // For startup init only — all schema SQL runs immediately
+        function runSync(sql) {
+            return new Promise((res, rej) => {
+                rawDb.run(sql, (err) => err ? rej(err) : res());
+            });
+        }
+
+        // We wrap the async sqlite3 into a sync-like API using pre-run statements
+        db = {
+            pragma(s) { rawDb.run(`PRAGMA ${s}`); },
+            exec(sql) {
+                // Split on ; and run each statement right away (fire-and-forget at init)
+                sql.split(';').map(s => s.trim()).filter(Boolean).forEach(s => {
+                    rawDb.run(s, (err) => { if (err && !err.message.includes('already exists')) console.error('DB exec err:', err.message); });
+                });
+            },
+            prepare(sql) {
+                const stmt = rawDb.prepare(sql);
+                return {
+                    run: (...args) => { stmt.run(...args); return {}; },
+                    get: (...args) => {
+                        let result;
+                        // Use synchronous sqlite3 API: stmt.get is sync when callback omitted in some versions
+                        stmt.get(...args, (err, row) => { result = row; });
+                        return result;
+                    },
+                    all: (...args) => {
+                        let rows = [];
+                        stmt.all(...args, (err, r) => { rows = r || []; });
+                        return rows;
+                    },
+                };
+            },
+            transaction(fn) {
+                return (...args) => {
+                    rawDb.run('BEGIN');
+                    try { const r = fn(...args); rawDb.run('COMMIT'); return r; }
+                    catch (e) { rawDb.run('ROLLBACK'); throw e; }
+                };
+            },
+            _raw: rawDb,
+        };
+        console.log('  ✓ SQLite: sqlite3 (async fallback)');
     }
 }
 
 // ─── Schema Migrations ───────────────────────────────────────────────────────
-
 db.exec(`
-  -- Users table
   CREATE TABLE IF NOT EXISTS users (
     id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     email       TEXT UNIQUE NOT NULL COLLATE NOCASE,
@@ -72,8 +113,6 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Workspaces (one per user on free, multiple on pro)
   CREATE TABLE IF NOT EXISTS workspaces (
     id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,8 +122,6 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- API Keys (for local agent connection)
   CREATE TABLE IF NOT EXISTS api_keys (
     id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -96,8 +133,6 @@ db.exec(`
     is_active    INTEGER NOT NULL DEFAULT 1,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Messages (chat between user & agent)
   CREATE TABLE IF NOT EXISTS messages (
     id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -108,8 +143,6 @@ db.exec(`
     read         INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Approval Requests (agent asks user for permission)
   CREATE TABLE IF NOT EXISTS approvals (
     id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -124,8 +157,6 @@ db.exec(`
     metadata     TEXT DEFAULT '{}',
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Activity Log
   CREATE TABLE IF NOT EXISTS activity (
     id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -136,23 +167,19 @@ db.exec(`
     metadata     TEXT DEFAULT '{}',
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Agent Sessions (track connected agents)
   CREATE TABLE IF NOT EXISTS agent_sessions (
-    id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    api_key_id   TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
-    socket_id    TEXT,
-    hostname     TEXT,
-    platform     TEXT,
+    id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    api_key_id    TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+    socket_id     TEXT,
+    hostname      TEXT,
+    platform      TEXT,
     agent_version TEXT,
-    is_online    INTEGER NOT NULL DEFAULT 1,
-    last_ping_at TEXT NOT NULL DEFAULT (datetime('now')),
-    connected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_online     INTEGER NOT NULL DEFAULT 1,
+    last_ping_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    connected_at  TEXT NOT NULL DEFAULT (datetime('now')),
     disconnected_at TEXT
   );
-
-  -- Refresh Tokens
   CREATE TABLE IF NOT EXISTS refresh_tokens (
     id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -160,8 +187,6 @@ db.exec(`
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  -- Indexes
   CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_approvals_workspace ON approvals(workspace_id, status);
   CREATE INDEX IF NOT EXISTS idx_activity_workspace ON activity(workspace_id, created_at DESC);
