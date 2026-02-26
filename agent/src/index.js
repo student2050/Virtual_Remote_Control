@@ -118,12 +118,23 @@ function setupSocketEvents() {
     });
 }
 
-// ─── Heartbeat (ping every 30s) ───────────────────────────────────────────────
+// ─── Heartbeat + Keep-alive (prevents Render free-tier sleep) ─────────────────
 function setupHeartbeat() {
+    // Fast heartbeat when connected (every 30s)
     setInterval(async () => {
         if (!connector.isConnected()) return;
         await api.ping().catch(() => { });
     }, 30 * 1000);
+
+    // External keep-alive: pings /health every 5min to prevent Render from sleeping
+    // The server's internal self-ping dies when Render kills the process,
+    // but THIS ping runs from the Mac and wakes the server back up
+    setInterval(async () => {
+        try {
+            const fetch = require('node-fetch');
+            await fetch(`${SERVER_URL}/health`, { timeout: 15000 });
+        } catch { }
+    }, 5 * 60 * 1000);
 }
 
 // ─── Inbox Polling (poll for new user messages every 3s) ─────────────────────

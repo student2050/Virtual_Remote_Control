@@ -105,17 +105,33 @@ const api = {
     delete: (path) => api.request('DELETE', path),
 };
 
-// Helper: retry a fetch-based call with countdown UX
-async function retryWithCountdown(fn, errEl, maxRetries = 4) {
+// Helper: wake server first then retry with countdown UX
+async function wakeServer(errEl) {
+    errEl.textContent = '⏳ Despertando servidor...';
+    errEl.classList.remove('hidden');
+    for (let attempt = 1; attempt <= 8; attempt++) {
+        try {
+            const res = await fetch('/health', { signal: AbortSignal.timeout(10000) });
+            if (res.ok) return true;
+        } catch { }
+        const waitSec = Math.min(attempt * 5, 15);
+        for (let i = waitSec; i > 0; i--) {
+            errEl.textContent = `⏳ Servidor iniciando (intento ${attempt}/8)... reintentando en ${i}s`;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
+    return false;
+}
+
+async function retryWithCountdown(fn, errEl, maxRetries = 6) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             return await fn();
         } catch (err) {
             if (attempt === maxRetries) throw err;
-            // Cold start: server waking up (Render free tier), wait and retry
-            const waitSec = attempt * 10;
+            const waitSec = Math.min(attempt * 5, 15);
             for (let i = waitSec; i > 0; i--) {
-                errEl.textContent = `⏳ Servidor iniciando (puede tardar ~30s)... reintentando en ${i}s`;
+                errEl.textContent = `⏳ Conectando (intento ${attempt}/${maxRetries})... ${i}s`;
                 errEl.classList.remove('hidden');
                 await new Promise(r => setTimeout(r, 1000));
             }
@@ -135,6 +151,16 @@ async function handleLogin(e) {
     const password = document.getElementById('login-password').value;
 
     try {
+        // Step 1: Wake server if sleeping (Render free tier cold start)
+        const awake = await wakeServer(errEl);
+        if (!awake) {
+            errEl.textContent = '⚠️ El servidor no responde. Verifica tu conexión a internet e intenta de nuevo.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        errEl.classList.add('hidden');
+
+        // Step 2: Login with retry
         const data = await retryWithCountdown(
             () => api.post('/api/auth/login', { email, password }),
             errEl
@@ -148,7 +174,7 @@ async function handleLogin(e) {
         applyAuth(data);
         initApp();
     } catch (err) {
-        errEl.textContent = '⚠️ No se pudo conectar. Si el servidor está iniciando, espera 30s y toca Entrar de nuevo.';
+        errEl.textContent = '⚠️ No se pudo conectar. Toca "Entrar" de nuevo para reintentar.';
         errEl.classList.remove('hidden');
     } finally {
         setLoading(btn, false);
