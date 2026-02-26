@@ -64,6 +64,43 @@
             z-index: 10
         }
 
+        .header .bell-btn {
+            margin-left: auto;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            position: relative;
+            transition: all .2s
+        }
+
+        .header .bell-btn.active {
+            border-color: var(--green);
+            box-shadow: 0 0 8px rgba(34, 197, 94, .3)
+        }
+
+        .header .bell-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 18px;
+            height: 18px;
+            background: var(--red);
+            border-radius: 50%;
+            font-size: 10px;
+            font-weight: 700;
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center
+        }
+
         .header .logo {
             width: 36px;
             height: 36px;
@@ -333,6 +370,10 @@
                     <div class="status"><span class="dot" id="status-dot"></span> <span
                             id="status-text">Conectando...</span></div>
                 </div>
+                <button class="bell-btn" id="bell-btn" onclick="toggleNotifications()" title="Activar notificaciones">
+                    🔕
+                    <span class="bell-badge" id="bell-badge">0</span>
+                </button>
             </div>
             <div id="messages"></div>
             <div class="quick-btns">
@@ -357,6 +398,125 @@
         let token = localStorage.getItem('ag_token') || '';
         let lastTimestamp = 0;
         let pollTimer = null;
+        let notificationsEnabled = localStorage.getItem('ag_notif') === 'true';
+        let unreadCount = 0;
+        let isPageVisible = true;
+
+        // ─── Notification Sound (base64 short beep) ──────────────────────────────
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playNotifSound() {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.value = 880;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.3);
+                // Second beep
+                setTimeout(() => {
+                    const osc2 = audioCtx.createOscillator();
+                    const gain2 = audioCtx.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(audioCtx.destination);
+                    osc2.frequency.value = 1100;
+                    osc2.type = 'sine';
+                    gain2.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+                    osc2.start(audioCtx.currentTime);
+                    osc2.stop(audioCtx.currentTime + 0.3);
+                }, 150);
+            } catch (e) { }
+        }
+
+        // ─── Notifications ───────────────────────────────────────────────────────
+        function toggleNotifications() {
+            if (!notificationsEnabled) {
+                // Request permission
+                if ('Notification' in window) {
+                    Notification.requestPermission().then(perm => {
+                        if (perm === 'granted') {
+                            notificationsEnabled = true;
+                            localStorage.setItem('ag_notif', 'true');
+                            updateBellUI();
+                            showToast('🔔 Notificaciones activadas');
+                            // Resume audio context (needed for iOS)
+                            audioCtx.resume();
+                        } else {
+                            showToast('⚠️ Permisos de notificación denegados');
+                        }
+                    });
+                } else {
+                    // Fallback: just enable sound
+                    notificationsEnabled = true;
+                    localStorage.setItem('ag_notif', 'true');
+                    updateBellUI();
+                    showToast('🔔 Sonido activado');
+                    audioCtx.resume();
+                }
+            } else {
+                notificationsEnabled = false;
+                localStorage.setItem('ag_notif', 'false');
+                updateBellUI();
+                showToast('🔕 Notificaciones desactivadas');
+            }
+        }
+
+        function updateBellUI() {
+            const btn = document.getElementById('bell-btn');
+            const badge = document.getElementById('bell-badge');
+            btn.textContent = '';
+            btn.innerHTML = (notificationsEnabled ? '🔔' : '🔕') +
+                '<span class="bell-badge" id="bell-badge">' + unreadCount + '</span>';
+            btn.className = 'bell-btn' + (notificationsEnabled ? ' active' : '');
+            const b = document.getElementById('bell-badge');
+            if (b) b.style.display = unreadCount > 0 ? 'flex' : 'none';
+        }
+
+        function notifyNewMessage(msg) {
+            if (!notificationsEnabled) return;
+            // Sound
+            playNotifSound();
+            // Vibrate
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            // Browser notification (if page not visible)
+            if (!isPageVisible && 'Notification' in window && Notification.permission === 'granted') {
+                const n = new Notification('🤖 Antigravity', {
+                    body: msg.content.substring(0, 100),
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">▲</text></svg>',
+                    tag: 'ag-msg-' + msg.timestamp,
+                    renotify: true
+                });
+                n.onclick = () => { window.focus(); n.close(); };
+            }
+            // Badge
+            if (!isPageVisible) {
+                unreadCount++;
+                updateBellUI();
+                document.title = `(${unreadCount}) Antigravity`;
+            }
+        }
+
+        function showToast(text) {
+            const t = document.createElement('div');
+            t.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:999;backdrop-filter:blur(10px);transition:opacity .3s';
+            t.textContent = text;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2000);
+        }
+
+        // Track page visibility
+        document.addEventListener('visibilitychange', () => {
+            isPageVisible = !document.hidden;
+            if (isPageVisible) {
+                unreadCount = 0;
+                updateBellUI();
+                document.title = 'Antigravity';
+            }
+        });
 
         // ─── Login ───────────────────────────────────────────────────────────────
         async function doLogin() {
@@ -491,7 +651,10 @@
                 const res = await fetch(API + `?action=inbox&since=${lastTimestamp}&role=agent`);
                 const data = await res.json();
                 if (data.messages && data.messages.length > 0) {
-                    data.messages.forEach(m => appendMessage(m));
+                    data.messages.forEach(m => {
+                        appendMessage(m);
+                        notifyNewMessage(m);
+                    });
                     lastTimestamp = data.messages[data.messages.length - 1].timestamp;
                     scrollBottom();
                 }
@@ -524,6 +687,9 @@
         if (token) {
             showChat();
         }
+
+        // Init bell UI
+        updateBellUI();
 
         // Auto-resize textarea
         document.getElementById('msg-input')?.addEventListener('input', function () {
