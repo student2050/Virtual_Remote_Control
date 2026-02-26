@@ -11,7 +11,7 @@ const CONFIG_DIR = path.join(os.homedir(), '.antigravity');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS = {
-    serverUrl: 'https://antigravity-remote.onrender.com',
+    serverUrl: 'https://antigravity-saas.onrender.com',
     apiKey: '',
     workspaceName: '',
     autoApprove: false,

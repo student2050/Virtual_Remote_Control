@@ -43,6 +43,7 @@ const connector = new AgentConnector(SERVER_URL, API_KEY);
 // Track pending approval prompts (to avoid multiple concurrent prompts)
 let pendingApproval = null;
 let lastInboxTime = new Date().toISOString();
+const processedMsgIds = new Set();  // Prevent duplicate processing from socket + polling
 
 // ─── Banner & Start ───────────────────────────────────────────────────────────
 log.banner({
@@ -102,12 +103,13 @@ function setupSocketEvents() {
     });
 
     connector.on('user_message', async (msg) => {
-        // Prevent duplicate processing if polling somehow caught it first
-        if (msg.created_at <= lastInboxTime) return;
+        // Deduplicate: skip if already processed by polling
+        if (processedMsgIds.has(msg.id)) return;
+        processedMsgIds.add(msg.id);
 
         // Socket delivered the message — show it and handle it
         log.userMessage(msg.content);
-        lastInboxTime = msg.created_at;
+        if (msg.created_at > lastInboxTime) lastInboxTime = msg.created_at;
         await handleUserMessage(msg);
     });
 
@@ -133,11 +135,20 @@ function startInboxPolling() {
             if (!messages || messages.length === 0) return;
 
             for (const msg of messages) {
+                // Deduplicate: skip if already processed by socket
+                if (processedMsgIds.has(msg.id)) continue;
+                processedMsgIds.add(msg.id);
                 // Update last seen timestamp
                 if (msg.created_at > lastInboxTime) lastInboxTime = msg.created_at;
                 // Show and process
                 log.userMessage(msg.content);
                 await handleUserMessage(msg);
+            }
+
+            // Keep Set from growing indefinitely
+            if (processedMsgIds.size > 500) {
+                const arr = [...processedMsgIds];
+                arr.splice(0, arr.length - 200).forEach(id => processedMsgIds.delete(id));
             }
         } catch { /* server may be temporarily unreachable */ }
     }, 3000);

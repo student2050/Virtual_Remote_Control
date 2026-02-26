@@ -55,7 +55,6 @@ class AgentConnector extends EventEmitter {
 
         // User sent a message from mobile → show in terminal
         s.on('user_message', (msg) => {
-            log.userMessage(msg.content);
             this.emit('user_message', msg);
         });
 
