@@ -296,7 +296,8 @@
             padding: 12px 16px;
             background: rgba(10, 14, 26, .95);
             border-top: 1px solid var(--border);
-            flex-shrink: 0
+            flex-shrink: 0;
+            align-items: flex-end
         }
 
         .input-bar textarea {
@@ -332,6 +333,119 @@
             align-items: center;
             justify-content: center;
             flex-shrink: 0
+        }
+
+        .input-bar .clip-btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 16px
+        }
+
+        /* Upload preview */
+        .upload-preview {
+            display: none;
+            padding: 8px 16px;
+            background: rgba(10, 14, 26, .95);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+            align-items: center;
+            gap: 10px
+        }
+
+        .upload-preview.active {
+            display: flex
+        }
+
+        .upload-preview .thumb {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+            overflow: hidden
+        }
+
+        .upload-preview .thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover
+        }
+
+        .upload-preview .file-info {
+            flex: 1;
+            min-width: 0
+        }
+
+        .upload-preview .file-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .upload-preview .file-size {
+            font-size: 11px;
+            color: var(--muted)
+        }
+
+        .upload-preview .remove-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: none;
+            color: var(--red);
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0
+        }
+
+        /* Media in messages */
+        .msg .media-preview {
+            margin-top: 8px;
+            border-radius: 10px;
+            overflow: hidden;
+            max-width: 100%
+        }
+
+        .msg .media-preview img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            cursor: pointer
+        }
+
+        .msg .media-preview video {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px
+        }
+
+        .msg .media-preview audio {
+            width: 100%;
+            margin-top: 4px
+        }
+
+        .msg .media-preview .file-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, .05);
+            border-radius: 8px;
+            color: var(--accent);
+            font-size: 13px;
+            text-decoration: none
         }
 
         /* Safe area */
@@ -382,7 +496,19 @@
                 <button onclick="sendQuick('progreso')">📈 Progreso</button>
                 <button onclick="sendQuick('pausa')">⏸ Pausa</button>
             </div>
+            <div class="upload-preview" id="upload-preview">
+                <div class="thumb" id="upload-thumb">📎</div>
+                <div class="file-info">
+                    <div class="file-name" id="upload-name">archivo.jpg</div>
+                    <div class="file-size" id="upload-size">0 KB</div>
+                </div>
+                <button class="remove-btn" onclick="clearUpload()">✕</button>
+            </div>
             <div class="input-bar">
+                <button class="clip-btn" onclick="document.getElementById('file-input').click()"
+                    title="Adjuntar archivo">📎</button>
+                <input type="file" id="file-input" accept="image/*,audio/*,video/*,.pdf" style="display:none"
+                    onchange="handleFileSelect(this)" />
                 <textarea id="msg-input" placeholder="Escríbele a tu agente..." rows="1"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
                 <button onclick="sendMsg()">➤</button>
@@ -595,9 +721,22 @@
             const container = document.getElementById('messages');
             const div = document.createElement('div');
             div.className = 'msg ' + m.role;
+            let mediaHtml = '';
+            if (m.attachment) {
+                const a = m.attachment;
+                if (a.type === 'image') {
+                    mediaHtml = `<div class="media-preview"><img src="${a.url}" alt="${a.name || 'imagen'}" onclick="window.open(this.src)" /></div>`;
+                } else if (a.type === 'video') {
+                    mediaHtml = `<div class="media-preview"><video src="${a.url}" controls playsinline></video></div>`;
+                } else if (a.type === 'audio') {
+                    mediaHtml = `<div class="media-preview"><audio src="${a.url}" controls></audio></div>`;
+                } else {
+                    mediaHtml = `<div class="media-preview"><a class="file-link" href="${a.url}" target="_blank">📄 ${a.name || 'Archivo'}</a></div>`;
+                }
+            }
             div.innerHTML = `
     <div class="sender">${m.role === 'agent' ? '🟢 Antigravity' : '📱 Tú'}</div>
-    ${escapeHtml(m.content)}
+    ${m.content ? escapeHtml(m.content) : ''}${mediaHtml}
     <div class="meta">${m.time || ''}</div>
   `;
             container.appendChild(div);
@@ -612,23 +751,103 @@
             setTimeout(() => c.scrollTop = c.scrollHeight, 50);
         }
 
+        // ─── File handling ───────────────────────────────────────────────────────
+        let pendingFile = null;
+
+        function handleFileSelect(input) {
+            const file = input.files[0];
+            if (!file) return;
+            if (file.size > 10 * 1024 * 1024) {
+                showToast('⚠️ Archivo muy grande (máx 10MB)');
+                input.value = '';
+                return;
+            }
+            pendingFile = file;
+            const preview = document.getElementById('upload-preview');
+            const thumb = document.getElementById('upload-thumb');
+            const name = document.getElementById('upload-name');
+            const size = document.getElementById('upload-size');
+
+            name.textContent = file.name;
+            size.textContent = (file.size / 1024).toFixed(1) + ' KB';
+
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = e => { thumb.innerHTML = `<img src="${e.target.result}" />`; };
+                reader.readAsDataURL(file);
+            } else if (file.type.startsWith('video/')) {
+                thumb.innerHTML = '🎥';
+            } else if (file.type.startsWith('audio/')) {
+                thumb.innerHTML = '🎧';
+            } else {
+                thumb.innerHTML = '📄';
+            }
+            preview.classList.add('active');
+            input.value = '';
+        }
+
+        function clearUpload() {
+            pendingFile = null;
+            document.getElementById('upload-preview').classList.remove('active');
+            document.getElementById('upload-thumb').innerHTML = '📎';
+        }
+
         // ─── Send ────────────────────────────────────────────────────────────────
         async function sendMsg() {
             const input = document.getElementById('msg-input');
             const content = input.value.trim();
-            if (!content) return;
+            if (!content && !pendingFile) return;
             input.value = '';
             input.style.height = 'auto';
 
+            let attachment = null;
+
+            // Upload file first if pending
+            if (pendingFile) {
+                showToast('⬆️ Subiendo archivo...');
+                try {
+                    const formData = new FormData();
+                    formData.append('file', pendingFile);
+                    formData.append('token', token);
+                    formData.append('role', 'user');
+                    const uploadRes = await fetch(API + '?action=upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const uploadData = await uploadRes.json();
+                    if (uploadData.success) {
+                        attachment = {
+                            url: uploadData.file.url,
+                            type: uploadData.file.type,
+                            name: uploadData.file.name,
+                            mime: uploadData.file.mime
+                        };
+                        showToast('✅ Archivo subido');
+                    } else {
+                        showToast('⚠️ Error: ' + (uploadData.error || 'fallo'));
+                        clearUpload();
+                        return;
+                    }
+                } catch (e) {
+                    showToast('⚠️ Error subiendo archivo');
+                    clearUpload();
+                    return;
+                }
+                clearUpload();
+            }
+
             // Optimistic UI
-            appendMessage({ role: 'user', content, time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) });
+            const timeStr = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+            appendMessage({ role: 'user', content: content || '', time: timeStr, attachment });
             scrollBottom();
 
             try {
+                const body = { action: 'send', content: content || '', role: 'user', token };
+                if (attachment) body.attachment = attachment;
                 await fetch(API + '?action=send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'send', content, role: 'user', token })
+                    body: JSON.stringify(body)
                 });
             } catch (e) {
                 appendMessage({ role: 'agent', content: '⚠️ Error enviando mensaje', time: '' });
